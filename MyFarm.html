@@ -275,31 +275,24 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 </div>
 <div id="page-products" class="page">
   <h1>🏷️ Products</h1><p class="sub">Register what you buy so applications can calculate cost automatically.</p>
-
-  <!-- RECEIPT SCANNER -->
-  <div class="card" style="border:2px solid var(--harvest);background:var(--harvestlight);">
-    <h2>📸 Scan a Receipt</h2>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Take a photo of any purchase receipt — AI will read it and extract the products for you to confirm before saving.</p>
-    <input type="file" id="prod-receipt-file" accept="image/*" capture="environment" style="display:none;" onchange="scanReceipt(this)"/>
-    <button class="btn btn-harvest" onclick="document.getElementById('prod-receipt-file').click()">📸 Take Photo of Receipt</button>
-    <div id="prod-scan-status" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
-  </div>
-
-  <!-- MANUAL ENTRY -->
   <div class="card">
-    <h2 id="prod-form-title">Add Product Manually</h2>
+    <h2 id="prod-form-title">Add Product</h2>
     <input type="hidden" id="prod-edit-id"/>
     <div class="form-row">
       <div class="fg"><label>Category *</label><select id="prod-category"><option value="Fertilizer">Fertilizer</option><option value="Insecticide">Insecticide</option><option value="Herbicide">Herbicide</option><option value="Fungicide">Fungicide</option><option value="Other">Other</option></select></div>
-      <div class="fg" style="flex:2"><label>Product Name *</label><input type="text" id="prod-name" placeholder="e.g. Urea 46-0-0"/></div>
+      <div class="fg" style="flex:2"><label>Product Name *</label><input type="text" id="prod-name" placeholder="e.g. UAN 32" oninput="autoFillDensity()"/></div>
     </div>
     <div class="form-row">
       <div class="fg"><label>Brand</label><input type="text" id="prod-brand" placeholder="optional"/></div>
       <div class="fg"><label>Container *</label><select id="prod-container"><option value="bag">Bag</option><option value="bottle">Bottle</option></select></div>
     </div>
     <div class="form-row">
-      <div class="fg"><label>Volume per Container *</label><input type="number" id="prod-vol" step="0.01" placeholder="e.g. 50"/></div>
+      <div class="fg"><label>Volume per Container *</label><input type="number" id="prod-vol" step="0.01" placeholder="e.g. 200"/></div>
       <div class="fg"><label>Unit *</label><select id="prod-vol-unit"><option value="kg">kg</option><option value="lb">lb</option><option value="L">L</option><option value="gal">gal</option><option value="oz">oz</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="fg"><label>Density (kg/L)</label><input type="number" id="prod-density" step="0.001" placeholder="e.g. 1.32 for UAN 32" oninput="calcProdPreview()"/></div>
+      <div class="fg" style="flex:2"><div id="prod-density-hint" style="font-size:12px;color:var(--leaf);padding-top:22px;"></div></div>
     </div>
     <div class="form-row">
       <div class="fg"><label>Price Paid *</label><input type="number" id="prod-price" step="0.01" placeholder="0.00"/></div>
@@ -323,16 +316,6 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 <div id="page-purchases" class="page">
   <h1>🛒 Purchases</h1><p class="sub">Log what you buy throughout the year — by receipt photo or manually.</p>
 
-  <!-- RECEIPT SCANNER -->
-  <div class="card" style="border:2px solid var(--harvest);background:var(--harvestlight);">
-    <h2>📸 Scan a Receipt</h2>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Take a photo of any receipt — AI reads it and fills in the purchase details for you to confirm.</p>
-    <input type="file" id="purch-receipt-file" accept="image/*" capture="environment" style="display:none;" onchange="scanPurchaseReceipt(this)"/>
-    <button class="btn btn-harvest" onclick="document.getElementById('purch-receipt-file').click()">📸 Scan Receipt</button>
-    <div id="purch-scan-status" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
-  </div>
-
-  <!-- MANUAL ENTRY -->
   <div class="card">
     <h2 id="purch-form-title">Log Purchase</h2>
     <input type="hidden" id="purch-edit-id"/>
@@ -1128,27 +1111,54 @@ function calcFertDosage(row){
   var unit = unitSel.value;
   var total = parseFloat(totalInput.value);
   var rate  = parseFloat(rateInput.value);
-  // Which field was just changed? Whichever has a value, derive the other.
+
+  // Get density from linked product if any
+  var prodSel = row.querySelector('.fr-product');
+  var density = 0;
+  if(prodSel && prodSel.value){
+    var prod = DB.products.find(function(p){ return String(p.id)===String(prodSel.value); });
+    if(prod && prod.density) density = parseFloat(prod.density)||0;
+  }
+
+  var mainText = '';
+  var densityText = '';
+
   if(!isNaN(total) && total>0 && area){
     var computedRate = total/area.num;
     rateInput.value = computedRate.toFixed(2);
-    display.textContent = total+' '+unit+' total ÷ '+area.num+' '+area.unit+' = '+computedRate.toFixed(2)+' '+unit+'/'+area.unit;
+    mainText = total+' '+unit+' total ÷ '+area.num+' '+area.unit+' = <strong>'+computedRate.toFixed(2)+' '+unit+'/'+area.unit+'</strong>';
     row.querySelector('.fr-amt').value = computedRate.toFixed(2)+' '+unit+'/'+area.unit;
+    if(density && unit==='kg'){
+      var rateL = computedRate/density;
+      var totalL = total/density;
+      densityText = '💧 = '+rateL.toFixed(2)+' L/'+area.unit+' ('+totalL.toFixed(1)+' L total) at '+density+' kg/L';
+    }
   } else if(!isNaN(rate) && rate>0 && area){
     var computedTotal = rate*area.num;
     totalInput.value = computedTotal.toFixed(2);
-    display.textContent = rate+' '+unit+'/'+area.unit+' × '+area.num+' '+area.unit+' = '+computedTotal.toFixed(2)+' '+unit+' total';
+    mainText = rate+' '+unit+'/'+area.unit+' × '+area.num+' '+area.unit+' = <strong>'+computedTotal.toFixed(2)+' '+unit+' total</strong>';
     row.querySelector('.fr-amt').value = rate+' '+unit+'/'+area.unit;
+    if(density && unit==='kg'){
+      var rateL2 = rate/density;
+      var totalL2 = computedTotal/density;
+      densityText = '💧 = '+rateL2.toFixed(2)+' L/'+area.unit+' ('+totalL2.toFixed(1)+' L total) at '+density+' kg/L';
+    } else if(density && unit==='L'){
+      var rateKg = rate*density;
+      var totalKg = computedTotal*density;
+      densityText = '⚖️ = '+rateKg.toFixed(2)+' kg/'+area.unit+' ('+totalKg.toFixed(1)+' kg total) at '+density+' kg/L';
+    }
   } else if(!isNaN(total)&&total>0){
     row.querySelector('.fr-amt').value = total+' '+unit;
-    display.textContent = total+' '+unit+' total'+(area?'':' (no section area set)');
+    mainText = total+' '+unit+' total'+(area?'':' (no section area set)');
   } else if(!isNaN(rate)&&rate>0){
-    row.querySelector('.fr-amt').value = rate+' '+unit+'/'+( area?area.unit:'ha');
-    display.textContent = rate+' '+unit+'/'+(area?area.unit:'ha')+(area?'':' (no section area set)');
+    row.querySelector('.fr-amt').value = rate+' '+unit+'/'+(area?area.unit:'ha');
+    mainText = rate+' '+unit+'/'+(area?area.unit:'ha')+(area?'':' (no section area set)');
   } else {
-    display.textContent = '';
+    display.innerHTML = '';
     row.querySelector('.fr-amt').value = '';
+    return;
   }
+  display.innerHTML = mainText+(densityText?'<br><span style="color:var(--water);">'+densityText+'</span>':'');
 }
 function addFertRow(prefill){
   var id = Date.now()+Math.floor(Math.random()*1000);
@@ -1603,12 +1613,39 @@ function productPricePerUnit(p){
   if(!totalVol) return 0;
   return (parseFloat(p.price)||0) / totalVol;
 }
+// Known liquid fertilizer densities (kg/L)
+var KNOWN_DENSITIES = {
+  'uan 32': 1.32, 'uan32': 1.32, 'uan-32': 1.32,
+  'uan 28': 1.28, 'uan28': 1.28, 'uan-28': 1.28,
+  'uan 30': 1.30, 'uan30': 1.30,
+  '10-34-0': 1.28, '10 34 0': 1.28, '1034': 1.28,
+  '8-24-0': 1.28, '8 24 0': 1.28, '824': 1.28,
+  '11-37-0': 1.32, '1137': 1.32,
+  '7-21-7': 1.26, '7217': 1.26
+};
+function autoFillDensity(){
+  var name = g('prod-name').toLowerCase().trim();
+  var density = null;
+  Object.keys(KNOWN_DENSITIES).forEach(function(k){
+    if(name.indexOf(k)>-1) density = KNOWN_DENSITIES[k];
+  });
+  var densityEl = document.getElementById('prod-density');
+  var hintEl = document.getElementById('prod-density-hint');
+  if(density && densityEl && !densityEl.value){
+    densityEl.value = density;
+    if(hintEl) hintEl.textContent = '✅ Auto-filled: '+density+' kg/L (known product)';
+  } else if(hintEl && !density){
+    hintEl.textContent = '';
+  }
+  calcProdPreview();
+}
 function calcProdPreview(){
   var vol = parseFloat(g('prod-vol'))||0;
   var price = parseFloat(g('prod-price'))||0;
   var qty = parseFloat(g('prod-qty'))||1;
   var unit = g('prod-vol-unit');
   var cur = g('prod-cur');
+  var density = parseFloat(g('prod-density'))||0;
   var el = document.getElementById('prod-calc');
   if(!el) return;
   if(!vol||!price){ el.innerHTML=''; return; }
@@ -1616,7 +1653,16 @@ function calcProdPreview(){
   var perUnit = price/totalVol;
   var container = g('prod-container');
   var perContainer = price/qty;
-  el.innerHTML = '= '+fmtCur(perUnit,cur)+'/'+priceLabel(unit)+'  ·  '+fmtCur(perContainer,cur)+' per '+container+'  ·  '+totalVol+' '+priceLabel(unit)+' total';
+  var html = '= '+fmtCur(perUnit,cur)+'/'+priceLabel(unit)+'  ·  '+fmtCur(perContainer,cur)+' per '+container+'  ·  '+totalVol+' '+priceLabel(unit)+' total';
+  // Show kg↔L conversion if density is set
+  if(density && unit==='kg'){
+    var liters = totalVol/density;
+    html += '<br><span style="color:var(--leaf);font-weight:600;">= '+liters.toFixed(1)+' L total (at '+density+' kg/L)  ·  '+fmtCur(price/liters/qty,'').replace('$','')+' per L</span>';
+  } else if(density && unit==='L'){
+    var kg = totalVol*density;
+    html += '<br><span style="color:var(--leaf);font-weight:600;">= '+kg.toFixed(1)+' kg total (at '+density+' kg/L)</span>';
+  }
+  el.innerHTML = html;
 }
 function openAddProduct(){
   document.getElementById('prod-edit-id').value = '';
@@ -1627,6 +1673,9 @@ function openAddProduct(){
   document.getElementById('prod-container').value = 'bag';
   document.getElementById('prod-vol').value = '';
   document.getElementById('prod-vol-unit').value = 'kg';
+  document.getElementById('prod-density').value = '';
+  var hint = document.getElementById('prod-density-hint');
+  if(hint) hint.textContent = '';
   document.getElementById('prod-price').value = '';
   document.getElementById('prod-cur').value = 'USD';
   document.getElementById('prod-qty').value = '1';
@@ -1638,7 +1687,7 @@ function addProduct(){
   var vol = g('prod-vol'), unit = g('prod-vol-unit'), price = g('prod-price'), qty = g('prod-qty');
   if(!name||!vol||!price){ alert('Enter a product name, volume per container, and price paid.'); return; }
   var editId = g('prod-edit-id');
-  var data = { category:category, name:name, brand:g('prod-brand'), container:container, vol:vol, unit:unit, price:price, currency:g('prod-cur'), qty:qty||'1' };
+  var data = { category:category, name:name, brand:g('prod-brand'), container:container, vol:vol, unit:unit, density:g('prod-density'), price:price, currency:g('prod-cur'), qty:qty||'1' };
   if(editId){
     var existing = DB.products.find(function(x){ return String(x.id)===String(editId); });
     if(existing) Object.assign(existing, data);
@@ -1661,6 +1710,7 @@ function editProduct(id){
   document.getElementById('prod-container').value = p.container;
   document.getElementById('prod-vol').value = p.vol;
   document.getElementById('prod-vol-unit').value = p.unit;
+  document.getElementById('prod-density').value = p.density||'';
   document.getElementById('prod-price').value = p.price;
   document.getElementById('prod-cur').value = p.currency;
   document.getElementById('prod-qty').value = p.qty||'1';
@@ -1695,6 +1745,17 @@ function renderProducts(){
     html += '<strong>'+p.name+'</strong>'+(p.brand?' — '+p.brand:'')+'<span class="badge '+(catBadge[p.category]||'bk')+'" style="margin-left:5px;">'+p.category+'</span>';
     html += '<div class="log-meta">'+p.container.charAt(0).toUpperCase()+p.container.slice(1)+' · '+p.vol+' '+priceLabel(p.unit)+' each · '+p.qty+' purchased · '+fmtCur(p.price,p.currency)+' total</div>';
     html += '<div style="font-size:13px;font-weight:700;color:var(--leaf);margin-top:2px;">'+fmtCur(perUnit,p.currency)+' per '+priceLabel(p.unit)+'</div>';
+    if(p.density && parseFloat(p.density)){
+      var d = parseFloat(p.density);
+      var totalVol = (parseFloat(p.vol)||0)*(parseFloat(p.qty)||1);
+      if(p.unit==='kg'){
+        var liters = totalVol/d;
+        html += '<div style="font-size:12px;color:var(--water);margin-top:2px;">💧 '+liters.toFixed(1)+' L total · '+fmtCur(parseFloat(p.price)/liters,p.currency)+'/L · density: '+d+' kg/L</div>';
+      } else if(p.unit==='L'){
+        var kgs = totalVol*d;
+        html += '<div style="font-size:12px;color:var(--water);margin-top:2px;">⚖️ '+kgs.toFixed(1)+' kg total · density: '+d+' kg/L</div>';
+      }
+    }
     html += '</div><div style="display:flex;gap:6px;flex-shrink:0;"><button class="btn btn-edit btn-sm" onclick="editProduct(\''+p.id+'\')">✏️</button><button class="log-del" onclick="deleteProduct(\''+p.id+'\')">✕</button></div></div>';
   });
   el.innerHTML = html;
@@ -1708,14 +1769,9 @@ function imageToBase64(file, callback){
 }
 
 async function callClaudeVision(base64, mediaType, prompt){
-  var response = await fetch('https://api.anthropic.com/v1/messages', {
+  var response = await fetch('/api/scan', {
     method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'x-api-key':'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',
-      'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true'
-    },
+    headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
       model:'claude-sonnet-4-6',
       max_tokens:1000,
@@ -1729,6 +1785,7 @@ async function callClaudeVision(base64, mediaType, prompt){
     })
   });
   var data = await response.json();
+  if(data.error) throw new Error(data.error);
   return data.content && data.content[0] ? data.content[0].text : '';
 }
 
@@ -1851,6 +1908,28 @@ function addPurchase(){
     DB.purchases.push(entry);
   }
   save();
+  // Auto-save new items to Products catalog
+  var cur = g('purch-cur');
+  var newProds = 0;
+  items.forEach(function(item, idx){
+    if(!item.name) return;
+    var exists = DB.products.find(function(p){ return p.name.toLowerCase()===item.name.toLowerCase(); });
+    if(!exists){
+      var nameL = item.name.toLowerCase();
+      var density = null;
+      Object.keys(KNOWN_DENSITIES).forEach(function(k){ if(nameL.indexOf(k)>-1) density=KNOWN_DENSITIES[k]; });
+      DB.products.push({
+        id: Date.now()+idx+1, category:'Fertilizer', name:item.name, brand:'',
+        container: (item.unit==='kg'||item.unit==='lb') ? 'bag' : 'bottle',
+        vol:item.qty||'1', unit:item.unit||'L',
+        density: density ? String(density) : '',
+        price: item.unitPrice ? String((parseFloat(item.unitPrice)||0)*(parseFloat(item.qty)||1)) : '0',
+        currency:cur, qty:'1'
+      });
+      newProds++;
+    }
+  });
+  if(newProds>0){ save(); showToast('✅ '+newProds+' new product'+(newProds!==1?'s':'')+' added to catalog'); }
   ['purch-date','purch-supplier','purch-ref','purch-total','purch-notes','purch-edit-id'].forEach(function(x){ var e=document.getElementById(x); if(e) e.value=''; });
   document.getElementById('purch-items').innerHTML='';
   document.getElementById('purch-items-empty').style.display='block';
@@ -2177,7 +2256,7 @@ function renderGlobal(id){
   if(id==='products'){
     var btn = document.getElementById('prod-btn');
     if(btn) btn.onclick = addProduct;
-    ['prod-vol','prod-price','prod-qty','prod-vol-unit','prod-container','prod-cur'].forEach(function(fid){
+    ['prod-vol','prod-price','prod-qty','prod-vol-unit','prod-container','prod-cur','prod-density'].forEach(function(fid){
       var f = document.getElementById(fid);
       if(f){ f.oninput = calcProdPreview; f.onchange = calcProdPreview; }
     });
