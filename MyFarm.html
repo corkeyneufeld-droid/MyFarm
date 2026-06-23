@@ -1213,6 +1213,8 @@ function addFert(){
   fertRows=[];
   renderFertSummary(curField.id, curSection.id);
   renderFertLog(curField.id, curSection.id, 'sm-fert-log');
+}
+function editFert(id){
   var entry = DB.fertilizer.find(function(x){ return String(x.id)===String(id); });
   if(!entry) return;
   fertEditId = id;
