@@ -134,6 +134,7 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
     <button class="nav-tab" onclick="showGlobal('harvest',this)">🌽 Harvest</button>
     <button class="nav-tab" onclick="showGlobal('labour',this)">👷 Labour</button>
     <button class="nav-tab" onclick="showGlobal('products',this)">🏷️ Products</button>
+    <button class="nav-tab" onclick="showGlobal('purchases',this)">🛒 Purchases</button>
     <button class="nav-tab" onclick="showGlobal('reports',this)">📄 Reports</button>
   </div>
 </nav>
@@ -274,8 +275,19 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 </div>
 <div id="page-products" class="page">
   <h1>🏷️ Products</h1><p class="sub">Register what you buy so applications can calculate cost automatically.</p>
+
+  <!-- RECEIPT SCANNER -->
+  <div class="card" style="border:2px solid var(--harvest);background:var(--harvestlight);">
+    <h2>📸 Scan a Receipt</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Take a photo of any purchase receipt — AI will read it and extract the products for you to confirm before saving.</p>
+    <input type="file" id="prod-receipt-file" accept="image/*" capture="environment" style="display:none;" onchange="scanReceipt(this)"/>
+    <button class="btn btn-harvest" onclick="document.getElementById('prod-receipt-file').click()">📸 Take Photo of Receipt</button>
+    <div id="prod-scan-status" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
+  </div>
+
+  <!-- MANUAL ENTRY -->
   <div class="card">
-    <h2 id="prod-form-title">Add Product</h2>
+    <h2 id="prod-form-title">Add Product Manually</h2>
     <input type="hidden" id="prod-edit-id"/>
     <div class="form-row">
       <div class="fg"><label>Category *</label><select id="prod-category"><option value="Fertilizer">Fertilizer</option><option value="Insecticide">Insecticide</option><option value="Herbicide">Herbicide</option><option value="Fungicide">Fungicide</option><option value="Other">Other</option></select></div>
@@ -307,6 +319,49 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
     <button class="mod-tab" onclick="showProdFilter('Other',this)">Other</button>
   </div>
   <div id="prod-list"></div>
+</div>
+<div id="page-purchases" class="page">
+  <h1>🛒 Purchases</h1><p class="sub">Log what you buy throughout the year — by receipt photo or manually.</p>
+
+  <!-- RECEIPT SCANNER -->
+  <div class="card" style="border:2px solid var(--harvest);background:var(--harvestlight);">
+    <h2>📸 Scan a Receipt</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Take a photo of any receipt — AI reads it and fills in the purchase details for you to confirm.</p>
+    <input type="file" id="purch-receipt-file" accept="image/*" capture="environment" style="display:none;" onchange="scanPurchaseReceipt(this)"/>
+    <button class="btn btn-harvest" onclick="document.getElementById('purch-receipt-file').click()">📸 Scan Receipt</button>
+    <div id="purch-scan-status" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
+  </div>
+
+  <!-- MANUAL ENTRY -->
+  <div class="card">
+    <h2 id="purch-form-title">Log Purchase</h2>
+    <input type="hidden" id="purch-edit-id"/>
+    <div class="form-row">
+      <div class="fg"><label>Date *</label><input type="date" id="purch-date"/></div>
+      <div class="fg" style="flex:2"><label>Supplier / Store *</label><input type="text" id="purch-supplier" placeholder="e.g. Campos Agrícolas Unidos"/></div>
+    </div>
+    <div class="form-row">
+      <div class="fg"><label>Receipt #</label><input type="text" id="purch-ref" placeholder="e.g. 162405"/></div>
+      <div class="fg"><label>Currency</label><select id="purch-cur"><option value="MXN">MXN $</option><option value="USD">USD $</option></select></div>
+    </div>
+    <hr class="divider"/>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3>Items Purchased</h3>
+      <button class="btn btn-outline btn-sm" onclick="addPurchItem()">+ Add Item</button>
+    </div>
+    <div id="purch-items"></div>
+    <div id="purch-items-empty" style="font-size:12px;color:var(--muted);padding:4px 0 10px;">No items added yet.</div>
+    <hr class="divider"/>
+    <div class="form-row">
+      <div class="fg"><label>Total Paid</label><input type="number" id="purch-total" step="0.01" placeholder="0.00"/></div>
+      <div class="fg" style="flex:2"><label>Notes</label><input type="text" id="purch-notes" placeholder="optional"/></div>
+    </div>
+    <button class="btn btn-green" id="purch-btn">🛒 Save Purchase</button>
+  </div>
+
+  <h2>Purchase History</h2>
+  <div id="purch-stats" class="stats" style="grid-template-columns:repeat(2,1fr);"></div>
+  <div id="purch-log"></div>
 </div>
 <div id="page-reports" class="page">
   <h1>📄 Reports & Backup</h1>
@@ -400,6 +455,19 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   </div>
 </div>
 
+<!-- RECEIPT SCAN PREVIEW MODAL -->
+<div class="modal-bg" id="scan-modal">
+  <div class="modal" style="max-height:85vh;overflow-y:auto;">
+    <h2 id="scan-modal-title">📸 Receipt Scan Results</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Review what the AI found. Edit anything before saving.</p>
+    <div id="scan-modal-content"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="closeModal('scan-modal')">Cancel</button>
+      <button class="btn btn-green" id="scan-modal-save-btn">✅ Save All</button>
+    </div>
+  </div>
+</div>
+
 <!-- COPY APPLICATION MODAL (fertilizer / spray) -->
 <div class="modal-bg" id="copy-modal">
   <div class="modal">
@@ -432,7 +500,7 @@ if (!DB) {
     DB = {};
   }
 }
-var keys = ['fields','irrigation','fertilizer','pesticide','spray','harvest','equipment','weather','reminders','rotation','photos','labour','electric','products'];
+var keys = ['fields','irrigation','fertilizer','pesticide','spray','harvest','equipment','weather','reminders','rotation','photos','labour','electric','products','purchases'];
 keys.forEach(function(k){ if(!DB[k]) DB[k]=[]; });
 function save(){ localStorage.setItem('myfarm3', JSON.stringify(DB)); }
 
@@ -1632,6 +1700,249 @@ function renderProducts(){
   el.innerHTML = html;
 }
 
+// ═══ RECEIPT SCANNER (Claude Vision API) ═══
+function imageToBase64(file, callback){
+  var reader = new FileReader();
+  reader.onload = function(e){ callback(e.target.result.split(',')[1], file.type); };
+  reader.readAsDataURL(file);
+}
+
+async function callClaudeVision(base64, mediaType, prompt){
+  var response = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      model:'claude-sonnet-4-6',
+      max_tokens:1000,
+      messages:[{
+        role:'user',
+        content:[
+          {type:'image', source:{type:'base64', media_type:mediaType, data:base64}},
+          {type:'text', text:prompt}
+        ]
+      }]
+    })
+  });
+  var data = await response.json();
+  return data.content && data.content[0] ? data.content[0].text : '';
+}
+
+async function scanReceipt(input){
+  var file = input.files[0]; if(!file) return;
+  var status = document.getElementById('prod-scan-status');
+  status.textContent = '⏳ Reading receipt... please wait';
+  imageToBase64(file, async function(b64, mime){
+    try {
+      var prompt = 'This is a purchase receipt. Extract ALL products/items listed. For each item return JSON array with fields: name, quantity, unit (L/kg/lb/gal/oz/units), unitPrice, totalPrice, currency (MXN or USD). Detect currency from the receipt. Return ONLY a valid JSON array, no other text. Example: [{"name":"Maxwell E/1","quantity":16,"unit":"L","unitPrice":418,"totalPrice":6688,"currency":"MXN"}]';
+      var result = await callClaudeVision(b64, mime, prompt);
+      var clean = result.replace(/```json|```/g,'').trim();
+      var items = JSON.parse(clean);
+      showProductScanPreview(items, file);
+      status.textContent = '✅ Found '+items.length+' item'+(items.length!==1?'s':'')+' — review below';
+    } catch(e) {
+      status.textContent = '❌ Could not read receipt. Try a clearer photo.';
+    }
+  });
+  input.value='';
+}
+
+function showProductScanPreview(items, file){
+  var html = '';
+  items.forEach(function(item, i){
+    var cats = ['Fertilizer','Insecticide','Herbicide','Fungicide','Other'];
+    var catOpts = cats.map(function(c){ return '<option value="'+c+'">'+c+'</option>'; }).join('');
+    var unitOpts = ['kg','L','lb','gal','oz','units'].map(function(u){ return '<option value="'+u+'"'+(u===item.unit?' selected':'')+'>'+u+'</option>'; }).join('');
+    var curOpts = '<option value="MXN"'+(item.currency==='MXN'?' selected':'')+'>MXN</option><option value="USD"'+(item.currency==='USD'?' selected':'')+'>USD</option>';
+    html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--bg);">';
+    html += '<div class="form-row" style="margin-bottom:6px;"><div class="fg" style="flex:2"><label>Product Name</label><input type="text" class="scan-name" value="'+((item.name||'').replace(/"/g,'&quot;'))+'"/></div><div class="fg"><label>Category</label><select class="scan-cat">'+catOpts+'</select></div></div>';
+    html += '<div class="form-row" style="margin-bottom:0;"><div class="fg"><label>Qty</label><input type="number" class="scan-qty" value="'+(item.quantity||1)+'" step="0.01"/></div><div class="fg"><label>Unit</label><select class="scan-unit">'+unitOpts+'</select></div><div class="fg"><label>Unit Price</label><input type="number" class="scan-uprice" value="'+(item.unitPrice||0)+'" step="0.01"/></div><div class="fg"><label>Currency</label><select class="scan-cur">'+curOpts+'</select></div></div>';
+    html += '</div>';
+  });
+  document.getElementById('scan-modal-title').textContent = '📸 Receipt — '+items.length+' item'+(items.length!==1?'s found':'found');
+  document.getElementById('scan-modal-content').innerHTML = html;
+  document.getElementById('scan-modal-save-btn').onclick = function(){ saveScannedProducts(); };
+  openModal('scan-modal');
+}
+
+function saveScannedProducts(){
+  var rows = document.querySelectorAll('#scan-modal-content > div');
+  var saved = 0;
+  rows.forEach(function(row){
+    var name = row.querySelector('.scan-name').value.trim();
+    if(!name) return;
+    var qty = parseFloat(row.querySelector('.scan-qty').value)||1;
+    var unit = row.querySelector('.scan-unit').value;
+    var uprice = parseFloat(row.querySelector('.scan-uprice').value)||0;
+    var cur = row.querySelector('.scan-cur').value;
+    var cat = row.querySelector('.scan-cat').value;
+    DB.products.push({
+      id:Date.now()+saved, category:cat, name:name, brand:'', container:'bottle',
+      vol:qty, unit:unit, price:(uprice*qty).toFixed(2), currency:cur, qty:'1'
+    });
+    saved++;
+  });
+  save();
+  closeModal('scan-modal');
+  renderProducts();
+  showToast('✅ Saved '+saved+' product'+(saved!==1?'s':'')+' to catalog');
+}
+
+// ═══ PURCHASES ═══
+var purchItems = [];
+
+function addPurchItem(prefill){
+  var id = Date.now()+Math.floor(Math.random()*1000);
+  purchItems.push(id);
+  document.getElementById('purch-items-empty').style.display='none';
+  var div = document.createElement('div');
+  div.id = 'pi-'+id;
+  div.style.cssText = 'background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:6px;';
+  div.innerHTML =
+    '<div class="form-row" style="margin-bottom:0;align-items:flex-end;">'+
+    '<div class="fg" style="flex:2"><label>Item</label><input type="text" class="pi-name" placeholder="e.g. Maxwell E/1"/></div>'+
+    '<div class="fg"><label>Qty</label><input type="number" class="pi-qty" step="0.01" placeholder="16"/></div>'+
+    '<div class="fg"><label>Unit</label><select class="pi-unit"><option>L</option><option>kg</option><option>lb</option><option>gal</option><option>oz</option><option>units</option></select></div>'+
+    '<div class="fg"><label>Unit Price</label><input type="number" class="pi-price" step="0.01" placeholder="0.00" oninput="calcPurchTotal()"/></div>'+
+    '<div style="display:flex;align-items:flex-end;padding-bottom:2px;"><button class="btn-del" onclick="document.getElementById(\'pi-'+id+'\').remove();purchItems=purchItems.filter(function(x){return x!=='+id+'});calcPurchTotal();if(!purchItems.length)document.getElementById(\'purch-items-empty\').style.display=\'block\';">✕</button></div>'+
+    '</div>';
+  document.getElementById('purch-items').appendChild(div);
+  if(prefill){
+    div.querySelector('.pi-name').value = prefill.name||'';
+    div.querySelector('.pi-qty').value = prefill.qty||'';
+    div.querySelector('.pi-unit').value = prefill.unit||'L';
+    div.querySelector('.pi-price').value = prefill.unitPrice||'';
+  }
+}
+
+function calcPurchTotal(){
+  var rows = document.querySelectorAll('#purch-items > div');
+  var total = 0;
+  rows.forEach(function(r){
+    var qty = parseFloat(r.querySelector('.pi-qty').value)||0;
+    var price = parseFloat(r.querySelector('.pi-price').value)||0;
+    total += qty*price;
+  });
+  var el = document.getElementById('purch-total');
+  if(el && total>0) el.value = total.toFixed(2);
+}
+
+function addPurchase(){
+  var date=g('purch-date'), supplier=g('purch-supplier');
+  if(!date||!supplier){ alert('Enter date and supplier name.'); return; }
+  var rows = document.querySelectorAll('#purch-items > div');
+  var items = [];
+  rows.forEach(function(r){
+    var name = r.querySelector('.pi-name').value.trim();
+    if(!name) return;
+    items.push({ name:name, qty:r.querySelector('.pi-qty').value, unit:r.querySelector('.pi-unit').value, unitPrice:r.querySelector('.pi-price').value });
+  });
+  var editId = g('purch-edit-id');
+  var entry = { date:date, supplier:supplier, ref:g('purch-ref'), currency:g('purch-cur'), total:g('purch-total'), items:items, notes:g('purch-notes') };
+  if(editId){
+    var ex = DB.purchases.find(function(x){ return String(x.id)===String(editId); });
+    if(ex) Object.assign(ex, entry);
+  } else {
+    entry.id = Date.now();
+    DB.purchases.push(entry);
+  }
+  save();
+  ['purch-date','purch-supplier','purch-ref','purch-total','purch-notes','purch-edit-id'].forEach(function(x){ var e=document.getElementById(x); if(e) e.value=''; });
+  document.getElementById('purch-items').innerHTML='';
+  document.getElementById('purch-items-empty').style.display='block';
+  document.getElementById('purch-form-title').textContent='Log Purchase';
+  document.getElementById('purch-btn').textContent='🛒 Save Purchase';
+  purchItems=[];
+  renderPurchases();
+}
+
+async function scanPurchaseReceipt(input){
+  var file = input.files[0]; if(!file) return;
+  var status = document.getElementById('purch-scan-status');
+  status.textContent = '⏳ Reading receipt... please wait';
+  imageToBase64(file, async function(b64, mime){
+    try {
+      var prompt = 'This is a purchase receipt. Extract: supplier/store name, date (YYYY-MM-DD), receipt number, currency (MXN or USD), all line items (name, quantity, unit, unit price), and total. Return ONLY valid JSON: {"supplier":"","date":"","ref":"","currency":"MXN","total":0,"items":[{"name":"","qty":0,"unit":"L","unitPrice":0}]}. No other text.';
+      var result = await callClaudeVision(b64, mime, prompt);
+      var clean = result.replace(/```json|```/g,'').trim();
+      var data = JSON.parse(clean);
+      showPurchaseScanPreview(data);
+      status.textContent = '✅ Receipt read — review below';
+    } catch(e){
+      status.textContent = '❌ Could not read receipt. Try a clearer photo.';
+    }
+  });
+  input.value='';
+}
+
+function showPurchaseScanPreview(data){
+  // Pre-fill the manual form with scanned data
+  if(data.date) document.getElementById('purch-date').value = data.date;
+  if(data.supplier) document.getElementById('purch-supplier').value = data.supplier;
+  if(data.ref) document.getElementById('purch-ref').value = data.ref;
+  if(data.currency) document.getElementById('purch-cur').value = data.currency;
+  if(data.total) document.getElementById('purch-total').value = data.total;
+  // Add items
+  document.getElementById('purch-items').innerHTML='';
+  purchItems=[];
+  (data.items||[]).forEach(function(item){ addPurchItem(item); });
+  calcPurchTotal();
+  showToast('📸 Receipt scanned — review and tap Save Purchase');
+  document.getElementById('purch-date').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function editPurchase(id){
+  var p = DB.purchases.find(function(x){ return String(x.id)===String(id); });
+  if(!p) return;
+  document.getElementById('purch-edit-id').value = p.id;
+  document.getElementById('purch-date').value = p.date||'';
+  document.getElementById('purch-supplier').value = p.supplier||'';
+  document.getElementById('purch-ref').value = p.ref||'';
+  document.getElementById('purch-cur').value = p.currency||'MXN';
+  document.getElementById('purch-total').value = p.total||'';
+  document.getElementById('purch-notes').value = p.notes||'';
+  document.getElementById('purch-items').innerHTML='';
+  purchItems=[];
+  (p.items||[]).forEach(function(item){ addPurchItem(item); });
+  document.getElementById('purch-form-title').textContent='Edit Purchase';
+  document.getElementById('purch-btn').textContent='💾 Update Purchase';
+  document.getElementById('purch-form-title').scrollIntoView({behavior:'smooth',block:'center'});
+}
+
+function deletePurchase(id){
+  var p = DB.purchases.find(function(x){ return String(x.id)===String(id); });
+  if(!p||!confirm('Delete this purchase from '+p.supplier+'?')) return;
+  DB.purchases = DB.purchases.filter(function(x){ return String(x.id)!==String(id); });
+  save(); renderPurchases();
+}
+
+function renderPurchases(){
+  var btn = document.getElementById('purch-btn');
+  if(btn) btn.onclick = addPurchase;
+  var dateEl = document.getElementById('purch-date');
+  if(dateEl && !dateEl.value) dateEl.value = new Date().toISOString().split('T')[0];
+  // Stats
+  var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.total)||0); },0);
+  var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.total)||0); },0);
+  var stats = document.getElementById('purch-stats');
+  if(stats) stats.innerHTML = '<div class="stat"><div class="stat-val or">'+fmtCur(totalMXN,'MXN')+'</div><div class="stat-lab">Total Spent (MXN)</div></div><div class="stat"><div class="stat-val or">'+fmtCur(totalUSD,'USD')+'</div><div class="stat-lab">Total Spent (USD)</div></div>';
+  // Log
+  var el = document.getElementById('purch-log'); if(!el) return;
+  if(!DB.purchases.length){ el.innerHTML='<div class="empty"><div class="empty-icon">🛒</div>No purchases logged yet.</div>'; return; }
+  var html='';
+  sortByDateDesc(DB.purchases).forEach(function(p){
+    html += '<div class="log" style="border-color:var(--harvest);background:var(--harvestlight);">';
+    html += '<div style="flex:1;"><strong>'+(p.supplier||'')+'</strong>'+(p.ref?' <span class="badge bk">Ref# '+p.ref+'</span>':'')+'<span class="badge bo" style="margin-left:5px;">'+fmtCur(p.total,p.currency)+'</span>';
+    html += '<div class="log-meta">📅 '+fmtD(p.date)+(p.notes?' · '+p.notes:'')+'</div>';
+    if(p.items&&p.items.length){
+      p.items.forEach(function(item){
+        html += '<div style="font-size:12px;margin-top:2px;color:var(--muted);">· '+item.name+(item.qty?' · '+item.qty+' '+item.unit:'')+(item.unitPrice?' · '+fmtCur(item.unitPrice,p.currency)+'/'+item.unit:'')+'</div>';
+      });
+    }
+    html += '</div><div style="display:flex;gap:6px;flex-shrink:0;"><button class="btn btn-edit btn-sm" onclick="editPurchase(\''+p.id+'\')">✏️</button><button class="log-del" onclick="deletePurchase(\''+p.id+'\')">✕</button></div></div>';
+  });
+  el.innerHTML = html;
+}
+
 function renderHarvStats(fid,sid){
   var el=document.getElementById('sm-harv-stats'); if(!el) return;
   var rows=DB.harvest.filter(function(r){ return String(r.fid)===String(fid)&&String(r.sid)===String(sid); });
@@ -1869,6 +2180,7 @@ function renderGlobal(id){
     curProdFilter = 'all';
     renderProducts();
   }
+  if(id==='purchases') renderPurchases();
   if(id==='reports'){
     var s=document.getElementById('rep-field');
     if(s){ s.innerHTML='<option value="">All Fields</option>'+smartSort(DB.fields).map(function(f){ return '<option value="'+f.id+'">'+f.name+'</option>'; }).join(''); }
@@ -2313,7 +2625,7 @@ function restoreData(input){
       if(!data.fields){ throw new Error('Invalid backup file'); }
       if(!confirm('This will replace ALL your current data with the backup. Are you sure?')) return;
       DB = data;
-      var keys = ['fields','irrigation','fertilizer','pesticide','spray','harvest','equipment','weather','reminders','rotation','photos','labour','electric','products'];
+      var keys = ['fields','irrigation','fertilizer','pesticide','spray','harvest','equipment','weather','reminders','rotation','photos','labour','electric','products','purchases'];
       keys.forEach(function(k){ if(!DB[k]) DB[k]=[]; });
       save();
       var msg = document.getElementById('backup-msg');
