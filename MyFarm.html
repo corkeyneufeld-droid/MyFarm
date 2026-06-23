@@ -1710,7 +1710,12 @@ function imageToBase64(file, callback){
 async function callClaudeVision(base64, mediaType, prompt){
   var response = await fetch('https://api.anthropic.com/v1/messages', {
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{
+      'Content-Type':'application/json',
+      'x-api-key':'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',
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
     body: JSON.stringify({
       model:'claude-sonnet-4-6',
       max_tokens:1000,
