@@ -25,7 +25,8 @@ nav{background:var(--soil);padding:0 14px;display:flex;align-items:center;height
 .nav-brand{font-family:Georgia,serif;color:var(--straw);font-size:20px;font-weight:bold;margin-right:14px;cursor:pointer;white-space:nowrap;}
 .nav-tabs{display:flex;gap:1px;overflow-x:auto;scrollbar-width:none;}
 .nav-tabs::-webkit-scrollbar{display:none;}
-.nav-tab{padding:6px 11px;border-radius:6px 6px 0 0;cursor:pointer;color:var(--wheat);font-size:12px;font-weight:500;white-space:nowrap;border:none;background:transparent;font-family:inherit;transition:background .15s;}
+.nav-tab{padding:6px 11px;border-radius:6px 6px 0 0;cursor:pointer;color:rgba(255,255,255,0.8);font-size:12px;font-weight:500;white-space:nowrap;border:none;background:transparent;font-family:inherit;transition:background .15s;}
+.nav-tab.active{background:rgba(255,255,255,0.2);color:#FFFFFF;font-weight:700;}
 .nav-tab:hover{background:rgba(255,255,255,0.1);}
 .nav-tab.active{background:var(--bg);color:var(--soil);}
 .nav-badge{background:var(--harvest);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:3px;}
@@ -98,7 +99,7 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 /* STATS */
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;}
 .stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;}
-.stat-val{font-size:22px;font-weight:700;color:var(--leaf);}
+.stat-val{font-size:22px;font-weight:800;color:var(--soil);}
 .stat-val.bl{color:var(--water);}.stat-val.or{color:var(--harvest);}
 .stat-lab{font-size:11px;color:var(--muted);margin-top:2px;}
 /* BREADCRUMB */
@@ -308,30 +309,46 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   <div id="prod-list"></div>
 </div>
 <div id="page-reports" class="page">
-  <h1>📄 Reports</h1><p class="sub">Export your farm data.</p>
-
-  <!-- BACKUP / RESTORE -->
-  <div class="card" style="border:2px solid var(--leaf);background:var(--leaflight);">
-    <h2>💾 Backup & Restore</h2>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Save all your farm data to a file on your phone. If you ever lose your data, restore it from that file instantly.</p>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button class="btn btn-green" onclick="backupData()" style="flex:1;justify-content:center;padding:14px;">💾 Backup All Data</button>
-      <button class="btn btn-outline" onclick="document.getElementById('restore-file').click()" style="flex:1;justify-content:center;padding:14px;">📂 Restore From Backup</button>
-    </div>
-    <input type="file" id="restore-file" accept=".json" style="display:none;" onchange="restoreData(this)"/>
-    <div id="backup-msg" style="margin-top:10px;font-size:13px;font-weight:600;display:none;"></div>
+  <h1>📄 Reports & Backup</h1>
+  <div class="mod-tabs" id="rep-tabs">
+    <button class="mod-tab active" onclick="showRepTab('reports',this)">📄 Reports</button>
+    <button class="mod-tab" onclick="showRepTab('backup',this)">💾 Backup</button>
   </div>
 
-  <div class="card"><h2>Generate Report</h2>
-    <div class="form-row">
-      <div class="fg"><label>Field</label><select id="rep-field"><option value="">All Fields</option></select></div>
-      <div class="fg"><label>Module</label><select id="rep-mod"><option value="all">All Data</option><option value="irrigation">Irrigation</option><option value="fertilizer">Fertilizer</option><option value="pesticide">Pesticide</option><option value="spray">Spray</option><option value="harvest">Harvest</option><option value="labour">Labour</option></select></div>
-      <div class="fg"><label>From</label><input type="date" id="rep-from"/></div>
-      <div class="fg"><label>To</label><input type="date" id="rep-to"/></div>
+  <!-- REPORTS TAB -->
+  <div id="rep-tab-reports">
+    <div class="card">
+      <h2>Generate Report</h2>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Select exactly what you want to see — only matching entries will be included.</p>
+      <div class="form-row">
+        <div class="fg"><label>Field</label><select id="rep-field" onchange="repPopulateSections()"><option value="">All Fields</option></select></div>
+        <div class="fg"><label>Section</label><select id="rep-section"><option value="">All Sections</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="fg"><label>Module</label><select id="rep-mod"><option value="all">All Modules</option><option value="irrigation">Irrigation</option><option value="fertilizer">Fertilizer</option><option value="pesticide">Pesticide</option><option value="spray">Spray</option><option value="harvest">Harvest</option><option value="labour">Labour</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="fg"><label>From Date</label><input type="date" id="rep-from"/></div>
+        <div class="fg"><label>To Date</label><input type="date" id="rep-to"/></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-green" onclick="exportPDF()">📄 PDF Report</button>
+        <button class="btn btn-outline" onclick="exportCSV()">📊 CSV Export</button>
+      </div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-outline" onclick="exportPDF()">📄 PDF</button>
-      <button class="btn btn-outline" onclick="exportCSV()">📊 CSV</button>
+  </div>
+
+  <!-- BACKUP TAB -->
+  <div id="rep-tab-backup" style="display:none;">
+    <div class="card" style="border:2px solid var(--leaf);background:var(--leaflight);">
+      <h2>💾 Backup & Restore</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Save all your farm data to a file on your phone. If you ever lose your data, restore it from that file instantly.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-green" onclick="backupData()" style="flex:1;justify-content:center;padding:14px;">💾 Backup All Data</button>
+        <button class="btn btn-outline" onclick="document.getElementById('restore-file').click()" style="flex:1;justify-content:center;padding:14px;">📂 Restore From Backup</button>
+      </div>
+      <input type="file" id="restore-file" accept=".json" style="display:none;" onchange="restoreData(this)"/>
+      <div id="backup-msg" style="margin-top:10px;font-size:13px;font-weight:600;display:none;"></div>
     </div>
   </div>
 </div>
@@ -1852,7 +1869,11 @@ function renderGlobal(id){
     curProdFilter = 'all';
     renderProducts();
   }
-  if(id==='reports'){ var s=document.getElementById('rep-field'); if(s){ s.innerHTML='<option value="">All Fields</option>'+DB.fields.map(function(f){ return '<option value="'+f.id+'">'+f.name+'</option>'; }).join(''); } }
+  if(id==='reports'){
+    var s=document.getElementById('rep-field');
+    if(s){ s.innerHTML='<option value="">All Fields</option>'+smartSort(DB.fields).map(function(f){ return '<option value="'+f.id+'">'+f.name+'</option>'; }).join(''); }
+    repPopulateSections();
+  }
 }
 
 // ═══ LABOUR ═══
@@ -2126,56 +2147,116 @@ function renderLabour(){
 }
 
 // ═══ REPORTS ═══
-function exportCSV(){
-  var fid=g('rep-field'), mod=g('rep-mod'), from=g('rep-from'), to=g('rep-to');
-  var csv='MyFarm Export\n\n';
-  var mods=mod==='all'?['irrigation','fertilizer','pesticide','spray','harvest','labour']:[mod];
-  mods.forEach(function(m){
-    var rows=DB[m].filter(function(r){
-      // Field filter — labour uses fids array, all others use fid
-      var fieldMatch = !fid;
-      if(!fieldMatch){
-        if(m==='labour') fieldMatch = (r.fids && r.fids.indexOf(String(fid))>-1) || String(r.fid)===String(fid);
-        else fieldMatch = String(r.fid)===String(fid);
-      }
-      // Date filter
-      var entryDate = r.date||r.start||'';
-      var dateMatch = (!from||entryDate>=from) && (!to||entryDate<=to);
-      return fieldMatch && dateMatch;
-    });
-    if(!rows.length) return;
-    csv+='\n'+m.toUpperCase()+'\n';
-    rows.forEach(function(r){ csv+=fN(r.fid||'')+','+sN(r.fid,r.sid)+','+JSON.stringify(r)+'\n'; });
+function showRepTab(tab, btn){
+  document.querySelectorAll('#rep-tabs .mod-tab').forEach(function(t){ t.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+  document.getElementById('rep-tab-reports').style.display = tab==='reports' ? '' : 'none';
+  document.getElementById('rep-tab-backup').style.display = tab==='backup' ? '' : 'none';
+}
+function repPopulateSections(){
+  var fid = g('rep-field');
+  var s = document.getElementById('rep-section');
+  if(!s) return;
+  if(!fid){ s.innerHTML='<option value="">All Sections</option>'; return; }
+  var f = DB.fields.find(function(x){ return String(x.id)===String(fid); });
+  if(!f||!f.sections.length){ s.innerHTML='<option value="">All Sections</option>'; return; }
+  s.innerHTML = '<option value="">All Sections</option>'+smartSort(f.sections).map(function(sec){
+    return '<option value="'+sec.id+'">'+sec.name+'</option>';
+  }).join('');
+}
+function repFilter(type, fid, sid, from, to){
+  return DB[type].filter(function(r){
+    // Field filter
+    var fieldOk = !fid;
+    if(!fieldOk){
+      if(type==='labour') fieldOk = (r.fids&&r.fids.indexOf(String(fid))>-1)||String(r.fid)===String(fid);
+      else fieldOk = String(r.fid)===String(fid);
+    }
+    // Section filter
+    var secOk = !sid || String(r.sid)===String(sid);
+    // Date filter
+    var d = r.date||r.start||'';
+    var dateOk = (!from||d>=from) && (!to||d<=to);
+    return fieldOk && secOk && dateOk;
   });
-  var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='MyFarm-'+new Date().toISOString().split('T')[0]+'.csv'; a.click();
+}
+function exportCSV(){
+  var fid=g('rep-field'), sid=g('rep-section'), mod=g('rep-mod'), from=g('rep-from'), to=g('rep-to');
+  var mods = mod==='all' ? ['irrigation','fertilizer','pesticide','spray','harvest','labour'] : [mod];
+  var csv = 'MyFarm Export\n';
+  csv += 'Field: '+(fid?fN(fid):'All')+' | Section: '+(sid?sN(fid,sid):'All')+' | From: '+(from||'any')+' To: '+(to||'any')+'\n\n';
+  mods.forEach(function(m){
+    var rows = repFilter(m, fid, sid, from, to);
+    if(!rows.length) return;
+    csv += '\n'+m.toUpperCase()+'\n';
+    rows.forEach(function(r){ csv += fN(r.fid||'')+','+sN(r.fid,r.sid)+','+JSON.stringify(r)+'\n'; });
+  });
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='MyFarm-'+new Date().toISOString().split('T')[0]+'.csv';
+  a.click();
 }
 function exportPDF(){
-  var fid=g('rep-field');
-  var filterFid = function(r){ return !fid || String(r.fid)===String(fid); };
-  var filterLabour = function(r){ return !fid || (r.fids && r.fids.indexOf(String(fid))>-1) || String(r.fid)===String(fid); };
-  var html='<html><head><title>MyFarm Report</title><style>body{font-family:Georgia,serif;padding:20px;color:#1C1008;}h1{color:#2C1A0E;border-bottom:3px solid #4A7C3F;padding-bottom:8px;}h2{color:#4A2E14;margin-top:20px;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#2C1A0E;color:#E8D5A3;padding:6px 8px;text-align:left;}td{padding:5px 8px;border-bottom:1px solid #D4C4A8;}tr:nth-child(even) td{background:#F5F0E8;}</style></head><body>';
-  html += '<h1>🌾 MyFarm Report</h1><p>Generated: '+new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'})+(fid?' · Field: '+fN(fid):'')+'</p>';
+  var fid=g('rep-field'), sid=g('rep-section'), mod=g('rep-mod'), from=g('rep-from'), to=g('rep-to');
+  var mods = mod==='all' ? ['irrigation','fertilizer','pesticide','spray','harvest','labour'] : [mod];
+  var fieldLabel = fid ? fN(fid) : 'All Fields';
+  var secLabel = sid ? sN(fid,sid) : 'All Sections';
+  var dateLabel = (from||to) ? ((from||'start')+' → '+(to||'today')) : 'All dates';
+  var html='<html><head><title>MyFarm Report</title><style>body{font-family:Georgia,serif;padding:20px;color:#1C1008;}h1{color:#2C1A0E;border-bottom:3px solid #4A7C3F;padding-bottom:8px;}h2{color:#4A2E14;margin-top:20px;}p.sub{color:#7A6A55;font-size:13px;margin-bottom:16px;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#2C1A0E;color:#E8D5A3;padding:6px 8px;text-align:left;}td{padding:5px 8px;border-bottom:1px solid #D4C4A8;}tr:nth-child(even) td{background:#F5F0E8;}</style></head><body>';
+  html += '<h1>🌾 MyFarm Report</h1>';
+  html += '<p class="sub">Generated: '+new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'})+'</p>';
+  html += '<p class="sub">📍 '+fieldLabel+' · '+secLabel+' · 📅 '+dateLabel+'</p>';
 
-  var irr = DB.irrigation.filter(filterFid);
-  if(irr.length){ html+='<h2>💧 Irrigation</h2><table><tr><th>Field</th><th>Section</th><th>Start</th><th>End</th><th>Hours</th><th>Source</th></tr>'+irr.map(function(r){ return '<tr><td>'+fN(r.fid)+'</td><td>'+sN(r.fid,r.sid)+'</td><td>'+fmtDT(r.start)+'</td><td>'+fmtDT(r.end)+'</td><td>'+r.hours+'</td><td>'+(r.source||'')+'</td></tr>'; }).join('')+'</table>'; }
+  mods.forEach(function(m){
+    var rows = repFilter(m, fid, sid, from, to);
+    if(!rows.length) return;
+    if(m==='irrigation'){
+      var totalHrs = rows.reduce(function(s,r){ return s+r.hours; },0);
+      html += '<h2>💧 Irrigation ('+rows.length+' sessions · '+totalHrs.toFixed(1)+' hrs total)</h2>';
+      html += '<table><tr><th>Field</th><th>Section</th><th>Start</th><th>End</th><th>Hours</th><th>Source</th></tr>';
+      html += rows.map(function(r){ return '<tr><td>'+fN(r.fid)+'</td><td>'+sN(r.fid,r.sid)+'</td><td>'+fmtDT(r.start)+'</td><td>'+fmtDT(r.end)+'</td><td>'+r.hours+'</td><td>'+(r.source||'')+'</td></tr>'; }).join('');
+      html += '</table>';
+    } else if(m==='fertilizer'){
+      html += '<h2>🌿 Fertilizer ('+rows.length+' applications)</h2>';
+      html += '<table><tr><th>Field</th><th>Section</th><th>Date</th><th>Product</th><th>Rate/ha</th><th>Total</th><th>Cost</th></tr>';
+      rows.forEach(function(r){
+        (r.products||[]).forEach(function(p,i){
+          html += '<tr><td>'+(i===0?fN(r.fid):'')+'</td><td>'+(i===0?sN(r.fid,r.sid):'')+'</td><td>'+(i===0?fmtD(r.date):'')+'</td><td>'+p.name+(p.brand?' — '+p.brand:'')+'</td><td>'+(p.ratePerHa?p.ratePerHa+' '+p.rateUnit+'/'+(p.areaUnit||'ha'):(p.amount||''))+'</td><td>'+(p.totalApplied?p.totalApplied+' '+(p.rateUnit||''):'')+'</td><td>'+(p.cost?costLine(p.cost,p.currency,p.unit):'')+'</td></tr>';
+        });
+      });
+      html += '</table>';
+    } else if(m==='pesticide'){
+      html += '<h2>🛡️ Pesticide ('+rows.length+' applications)</h2>';
+      html += '<table><tr><th>Field</th><th>Section</th><th>Date</th><th>Product</th><th>Type</th><th>Rate/ha</th><th>Total</th><th>Cost</th></tr>';
+      html += rows.map(function(r){ return '<tr><td>'+fN(r.fid)+'</td><td>'+sN(r.fid,r.sid)+'</td><td>'+fmtD(r.date)+'</td><td>'+r.name+(r.brand?' — '+r.brand:'')+'</td><td>'+(r.type||'')+'</td><td>'+(r.ratePerHa?r.ratePerHa+' '+r.rateUnit+'/'+(r.areaUnit||'ha'):(r.amount||''))+'</td><td>'+(r.totalApplied?r.totalApplied+' '+(r.rateUnit||''):'')+'</td><td>'+(r.cost?costLine(r.cost,r.currency,r.unit):'')+'</td></tr>'; }).join('');
+      html += '</table>';
+    } else if(m==='spray'){
+      html += '<h2>🧪 Spray ('+rows.length+' records)</h2>';
+      html += '<table><tr><th>Field</th><th>Section</th><th>Date</th><th>Target</th><th>Chemical</th><th>Rate/ha</th><th>Total</th><th>Sprayed By</th></tr>';
+      rows.forEach(function(r){
+        (r.chemicals||[]).forEach(function(c,i){
+          html += '<tr><td>'+(i===0?fN(r.fid):'')+'</td><td>'+(i===0?sN(r.fid,r.sid):'')+'</td><td>'+(i===0?fmtD(r.date):'')+'</td><td>'+(i===0?(r.target||''):'')+'</td><td>'+c.name+(c.ai?' — '+c.ai:'')+'</td><td>'+(c.ratePerHa?c.ratePerHa+' '+c.rateUnit+'/'+(c.areaUnit||'ha'):(c.rate||''))+'</td><td>'+(c.totalApplied?c.totalApplied+' '+(c.rateUnit||''):'')+'</td><td>'+(i===0?(r.op||''):'')+'</td></tr>';
+        });
+      });
+      html += '</table>';
+    } else if(m==='harvest'){
+      html += '<h2>🌽 Harvest ('+rows.length+' entries)</h2>';
+      html += '<table><tr><th>Field</th><th>Section</th><th>Date</th><th>Crop</th><th>Yield</th><th>Value</th></tr>';
+      html += rows.map(function(r){ return '<tr><td>'+fN(r.fid)+'</td><td>'+sN(r.fid,r.sid)+'</td><td>'+fmtD(r.date)+'</td><td>'+(r.crop||'')+'</td><td>'+(r.yield||'')+'</td><td>'+(r.value?costLine(r.value,r.currency,r.unit):'')+'</td></tr>'; }).join('');
+      html += '</table>';
+    } else if(m==='labour'){
+      html += '<h2>👷 Labour ('+rows.length+' entries)</h2>';
+      html += '<table><tr><th>Date</th><th>Crew</th><th>Fields</th><th>People</th><th>Rate/Person</th><th>Mgr Rate</th><th>Total</th><th>Task</th><th>Hours</th></tr>';
+      html += rows.map(function(r){ var fnames=(r.fids&&r.fids.length?r.fids:(r.fid?[r.fid]:[])).map(function(f){ return fN(f); }).join(', ')||'—'; return '<tr><td>'+fmtD(r.date)+'</td><td>'+(r.worker||'')+'</td><td>'+fnames+'</td><td>'+r.count+'</td><td>'+fmtCur(r.rate,r.currency)+'</td><td>'+(r.mgrRate&&parseFloat(r.mgrRate)>0?fmtCur(r.mgrRate,r.currency):'—')+'</td><td>'+fmtCur(r.amount,r.currency)+'</td><td>'+(r.task||'')+'</td><td>'+(r.hours||'')+'</td></tr>'; }).join('');
+      html += '</table>';
+    }
+  });
 
-  var fert = DB.fertilizer.filter(filterFid);
-  if(fert.length){ html+='<h2>🌿 Fertilizer</h2><table><tr><th>Field</th><th>Section</th><th>Date</th><th>Products</th><th>Notes</th></tr>'+fert.map(function(r){ var prods=(r.products||[]).map(function(p){ return p.name+(p.amount?' · '+p.amount:'')+(p.cost?' · '+costLine(p.cost,p.currency,p.unit):''); }).join('; '); return '<tr><td>'+fN(r.fid)+'</td><td>'+sN(r.fid,r.sid)+'</td><td>'+fmtD(r.date)+'</td><td>'+prods+'</td><td>'+(r.notes||'')+'</td></tr>'; }).join('')+'</table>'; }
-
-  var pest = DB.pesticide.filter(filterFid);
-  if(pest.length){ html+='<h2>🛡️ Pesticide</h2><table><tr><th>Field</th><th>Section</th><th>Date</th><th>Product</th><th>Type</th><th>Rate</th><th>Cost</th></tr>'+pest.map(function(r){ return '<tr><td>'+fN(r.fid)+'</td><td>'+sN(r.fid,r.sid)+'</td><td>'+fmtD(r.date)+'</td><td>'+r.name+(r.brand?' — '+r.brand:'')+'</td><td>'+(r.type||'')+'</td><td>'+(r.amount||'')+'</td><td>'+(r.cost?costLine(r.cost,r.currency,r.unit):'')+'</td></tr>'; }).join('')+'</table>'; }
-
-  var spray = DB.spray.filter(filterFid);
-  if(spray.length){ html+='<h2>🧪 Spray</h2><table><tr><th>Field</th><th>Section</th><th>Date</th><th>Target</th><th>Sprayed By</th><th>Chemicals</th><th>Water</th></tr>'+spray.map(function(r){ var chems=(r.chemicals||[]).map(function(c){ return c.name+(c.rate?' · '+c.rate:'')+(c.cost?' · '+costLine(c.cost,c.currency,c.unit):''); }).join('; '); return '<tr><td>'+fN(r.fid)+'</td><td>'+sN(r.fid,r.sid)+'</td><td>'+fmtD(r.date)+'</td><td>'+(r.target||'')+'</td><td>'+(r.op||'')+'</td><td>'+chems+'</td><td>'+(r.water?r.water+'/'+(r.waterUnit||'ha'):'')+'</td></tr>'; }).join('')+'</table>'; }
-
-  var harv = DB.harvest.filter(filterFid);
-  if(harv.length){ html+='<h2>🌽 Harvest</h2><table><tr><th>Field</th><th>Section</th><th>Date</th><th>Crop</th><th>Yield</th><th>Value</th></tr>'+harv.map(function(r){ return '<tr><td>'+fN(r.fid)+'</td><td>'+sN(r.fid,r.sid)+'</td><td>'+fmtD(r.date)+'</td><td>'+(r.crop||'')+'</td><td>'+(r.yield||'')+'</td><td>'+(r.value?costLine(r.value,r.currency,r.unit):'')+'</td></tr>'; }).join('')+'</table>'; }
-
-  var lab = DB.labour.filter(filterLabour);
-  if(lab.length){ html+='<h2>👷 Labour</h2><table><tr><th>Date</th><th>Crew</th><th>Fields</th><th>People</th><th>Rate/Person</th><th>Mgr Rate</th><th>Crew Total</th><th>Task</th><th>Hours</th></tr>'+lab.map(function(r){ var fidsArr=r.fids&&r.fids.length?r.fids:(r.fid?[r.fid]:[]); var fnames=fidsArr.map(function(f){ return fN(f); }).join(', ')||'—'; return '<tr><td>'+fmtD(r.date)+'</td><td>'+(r.worker||'')+'</td><td>'+fnames+'</td><td>'+r.count+'</td><td>'+fmtCur(r.rate,r.currency)+'</td><td>'+(r.mgrRate&&parseFloat(r.mgrRate)>0?fmtCur(r.mgrRate,r.currency):'—')+'</td><td>'+fmtCur(r.amount,r.currency)+'</td><td>'+(r.task||'')+'</td><td>'+(r.hours||'')+'</td></tr>'; }).join('')+'</table>'; }
-
-  html+='</body></html>';
-  var w=window.open('','_blank'); w.document.write(html); w.document.close(); w.onload=function(){ w.print(); };
+  html += '</body></html>';
+  var w=window.open('','_blank');
+  if(!w){ alert('Allow pop-ups for PDF export.'); return; }
+  w.document.write(html); w.document.close();
+  w.onload=function(){ w.print(); };
 }
 
 
