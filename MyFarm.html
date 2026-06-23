@@ -170,7 +170,15 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   <div id="mod-content"></div>
 </div>
 
-<div id="page-dashboard" class="page"><h1>📊 Dashboard</h1><p class="sub">Cost and yield overview.</p><div id="dash-content"></div></div>
+<div id="page-dashboard" class="page">
+  <h1>📊 Dashboard</h1>
+  <div class="form-row" style="margin-bottom:12px;">
+    <div class="fg"><label>View</label><select id="dash-view" onchange="renderDashboard()"><option value="farm">Whole Farm</option><option value="field">By Field</option></select></div>
+    <div class="fg" id="dash-field-wrap" style="display:none;"><label>Field</label><select id="dash-field" onchange="renderDashboard()"><option value="">All Fields</option></select></div>
+    <div class="fg" id="dash-section-wrap" style="display:none;"><label>Section</label><select id="dash-section" onchange="renderDashboard()"><option value="">All Sections</option></select></div>
+  </div>
+  <div id="dash-content"></div>
+</div>
 <div id="page-irrigation" class="page">
   <h1>💧 Irrigation — All Fields</h1>
   <div class="stats" id="g-irr-stats"></div>
@@ -321,7 +329,10 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
     <input type="hidden" id="purch-edit-id"/>
     <div class="form-row">
       <div class="fg"><label>Date *</label><input type="date" id="purch-date"/></div>
-      <div class="fg" style="flex:2"><label>Supplier / Store *</label><input type="text" id="purch-supplier" placeholder="e.g. Campos Agrícolas Unidos"/></div>
+      <div class="fg" style="flex:2"><label>Supplier / Store *</label>
+        <input type="text" id="purch-supplier" placeholder="e.g. Campos Agrícolas Unidos" list="purch-supplier-list" autocomplete="off"/>
+        <datalist id="purch-supplier-list"></datalist>
+      </div>
     </div>
     <div class="form-row">
       <div class="fg"><label>Receipt #</label><input type="text" id="purch-ref" placeholder="e.g. 162405"/></div>
@@ -343,6 +354,7 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   </div>
 
   <h2>Purchase History</h2>
+  <datalist id="purch-items-list"></datalist>
   <div id="purch-stats" class="stats" style="grid-template-columns:repeat(2,1fr);"></div>
   <div id="purch-log"></div>
 </div>
@@ -570,6 +582,68 @@ function migratePestSprayDosage(){
     });
   });
   if(changed) save();
+}
+function autoPriceBackfill(){
+  var changed = 0;
+  // Fertilizer products
+  DB.fertilizer.forEach(function(entry){
+    (entry.products||[]).forEach(function(p){
+      if(p.cost && parseFloat(p.cost)>0) return; // already has cost
+      var prod = DB.products.find(function(x){ return x.name.toLowerCase()===p.name.toLowerCase(); });
+      if(!prod) return;
+      var perUnit = productPricePerUnit(prod);
+      if(!perUnit) return;
+      if(p.totalApplied){
+        p.cost = (p.totalApplied * perUnit).toFixed(2);
+        p.currency = prod.currency;
+        p.unit = 'total';
+        changed++;
+      } else if(p.ratePerHa){
+        var area = getSectionAreaForIds(entry.fid, entry.sid);
+        if(area){
+          p.cost = (p.ratePerHa * area.num * perUnit).toFixed(2);
+          p.currency = prod.currency;
+          p.unit = 'total';
+          changed++;
+        }
+      }
+    });
+  });
+  // Pesticide
+  DB.pesticide.forEach(function(r){
+    if(r.cost && parseFloat(r.cost)>0) return;
+    var prod = DB.products.find(function(x){ return x.name.toLowerCase()===r.name.toLowerCase(); });
+    if(!prod) return;
+    var perUnit = productPricePerUnit(prod);
+    if(!perUnit) return;
+    if(r.totalApplied){
+      r.cost = (r.totalApplied * perUnit).toFixed(2);
+      r.currency = prod.currency;
+      r.unit = 'total';
+      changed++;
+    }
+  });
+  // Spray chemicals
+  DB.spray.forEach(function(r){
+    (r.chemicals||[]).forEach(function(c){
+      if(c.cost && parseFloat(c.cost)>0) return;
+      var prod = DB.products.find(function(x){ return x.name.toLowerCase()===c.name.toLowerCase(); });
+      if(!prod) return;
+      var perUnit = productPricePerUnit(prod);
+      if(!perUnit) return;
+      if(c.totalApplied){
+        c.cost = (c.totalApplied * perUnit).toFixed(2);
+        c.currency = prod.currency;
+        c.unit = 'total';
+        changed++;
+      }
+    });
+  });
+  if(changed>0){
+    save();
+    showToast('✅ Auto-filled '+changed+' missing cost'+(changed!==1?'s':'')+' from product catalog');
+  }
+  return changed;
 }
 migratePestSprayDosage();
 
@@ -926,7 +1000,7 @@ function openSection(fid, sid){
 
 // ═══ MODULE SYSTEM ═══
 function showMod(mod, btn){
-  curMod = mod; fertRows = []; fertEditId = null; irrEditId = null;
+  curMod = mod; fertRows = []; fertEditId = null; irrEditId = null; sprayEditId = null;
   document.querySelectorAll('.mod-tab').forEach(function(t){ t.classList.remove('active'); });
   if(btn) btn.classList.add('active');
   document.getElementById('mod-content').innerHTML = buildMod(mod);
@@ -997,7 +1071,6 @@ function editIrr(id){
   var entry = DB.irrigation.find(function(x){ return String(x.id)===String(id); });
   if(!entry) return;
   irrEditId = id;
-  // Parse stored "YYYY-MM-DDTHH:MM" back into separate date and time fields
   var startParts = (entry.start||'').split('T');
   var endParts = (entry.end||'').split('T');
   document.getElementById('irr-date').value = startParts[0]||'';
@@ -1011,6 +1084,45 @@ function editIrr(id){
   var title = document.getElementById('irr-form-title');
   if(title) title.textContent = 'Edit Irrigation Session';
   document.getElementById('irr-date').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+var sprayEditId = null;
+function editSpray(id){
+  var entry = DB.spray.find(function(x){ return String(x.id)===String(id); });
+  if(!entry) return;
+  sprayEditId = id;
+  document.getElementById('spray-date').value = entry.date||'';
+  document.getElementById('spray-target').value = entry.target||'';
+  document.getElementById('spray-op').value = entry.op||'';
+  document.getElementById('spray-water').value = entry.water||'';
+  document.getElementById('spray-water-unit').value = entry.waterUnit||'ha';
+  document.getElementById('spray-temp').value = entry.temp||'';
+  document.getElementById('spray-reentry').value = entry.reentry||'';
+  document.getElementById('spray-notes').value = entry.notes||'';
+  // Load chemicals back into rows
+  document.getElementById('spray-rows').innerHTML='';
+  sprayRows=[];
+  var empty = document.getElementById('spray-empty');
+  if(empty) empty.style.display='none';
+  (entry.chemicals||[]).forEach(function(c){
+    addSprayRow();
+    var rows = document.querySelectorAll('#spray-rows > div');
+    var row = rows[rows.length-1];
+    if(!row) return;
+    row.querySelector('.sr-name').value = c.name||'';
+    row.querySelector('.sr-ai').value = c.ai||'';
+    row.querySelector('.sr-reg').value = c.reg||'';
+    row.querySelector('.sr-cost').value = c.cost||'';
+    row.querySelector('.sr-cur').value = c.currency||'USD';
+    row.querySelector('.sr-unit').value = c.unit||'total';
+    if(c.ratePerHa) row.querySelector('.sr-rate-amt').value = c.ratePerHa;
+    if(c.totalApplied) row.querySelector('.sr-total-amt').value = c.totalApplied;
+    if(c.rateUnit) row.querySelector('.sr-amt-unit').value = c.rateUnit;
+    row.querySelector('.sr-rate').value = c.rate||'';
+  });
+  var btn = document.getElementById('spray-btn');
+  if(btn) btn.textContent = '💾 Update Spray Record';
+  document.getElementById('spray-date').scrollIntoView({behavior:'smooth', block:'center'});
 }
 
 function getSectionArea(){
@@ -1502,7 +1614,14 @@ function addSpray(){
     chemicals.push({ name:name, ai:r.querySelector('.sr-ai').value.trim(), rate:r.querySelector('.sr-rate').value.trim(), totalApplied:totalAmt, ratePerHa:rateAmt, rateUnit:amtUnit, areaUnit:area?area.unit:'ha', reg:r.querySelector('.sr-reg').value.trim(), cost:r.querySelector('.sr-cost').value, currency:r.querySelector('.sr-cur').value, unit:r.querySelector('.sr-unit').value, productId:(prodSel&&prodSel.value)?prodSel.value:null });
   });
   if(!ok){ alert('Each chemical needs a name.'); return; }
-  DB.spray.push({ id:Date.now(), fid:curField.id, sid:curSection.id, date:date, target:g('spray-target'), op:g('spray-op'), water:g('spray-water'), waterUnit:g('spray-water-unit'), temp:g('spray-temp'), reentry:g('spray-reentry'), notes:g('spray-notes'), chemicals:chemicals });
+  if(sprayEditId){
+    var existing = DB.spray.find(function(x){ return String(x.id)===String(sprayEditId); });
+    if(existing){ existing.date=date; existing.target=g('spray-target'); existing.op=g('spray-op'); existing.water=g('spray-water'); existing.waterUnit=g('spray-water-unit'); existing.temp=g('spray-temp'); existing.reentry=g('spray-reentry'); existing.notes=g('spray-notes'); existing.chemicals=chemicals; }
+    sprayEditId=null;
+    var btn=document.getElementById('spray-btn'); if(btn) btn.textContent='🧪 Save Spray Record';
+  } else {
+    DB.spray.push({ id:Date.now(), fid:curField.id, sid:curSection.id, date:date, target:g('spray-target'), op:g('spray-op'), water:g('spray-water'), waterUnit:g('spray-water-unit'), temp:g('spray-temp'), reentry:g('spray-reentry'), notes:g('spray-notes'), chemicals:chemicals });
+  }
   save();
   ['spray-date','spray-target','spray-op','spray-water','spray-temp','spray-reentry','spray-notes'].forEach(function(x){ var el=document.getElementById(x); if(el)el.value=''; });
   document.getElementById('spray-rows').innerHTML='';
@@ -1697,6 +1816,7 @@ function addProduct(){
   }
   save();
   openAddProduct();
+  autoPriceBackfill();
   renderProducts();
 }
 function editProduct(id){
@@ -1861,7 +1981,7 @@ function addPurchItem(prefill){
   div.style.cssText = 'background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:6px;';
   div.innerHTML =
     '<div class="form-row" style="margin-bottom:0;align-items:flex-end;">'+
-    '<div class="fg" style="flex:2"><label>Item</label><input type="text" class="pi-name" placeholder="e.g. Maxwell E/1"/></div>'+
+    '<div class="fg" style="flex:2"><label>Item</label><input type="text" class="pi-name" placeholder="e.g. Maxwell E/1" list="purch-items-list" autocomplete="off"/></div>'+
     '<div class="fg"><label>Qty</label><input type="number" class="pi-qty" step="0.01" placeholder="16"/></div>'+
     '<div class="fg"><label>Unit</label><select class="pi-unit"><option>L</option><option>kg</option><option>lb</option><option>gal</option><option>oz</option><option>units</option></select></div>'+
     '<div class="fg"><label>Unit Price</label><input type="number" class="pi-price" step="0.01" placeholder="0.00" oninput="calcPurchTotal()"/></div>'+
@@ -2004,6 +2124,21 @@ function renderPurchases(){
   if(btn) btn.onclick = addPurchase;
   var dateEl = document.getElementById('purch-date');
   if(dateEl && !dateEl.value) dateEl.value = new Date().toISOString().split('T')[0];
+  // Populate supplier memory
+  var supplierList = document.getElementById('purch-supplier-list');
+  if(supplierList){
+    var suppliers = [];
+    DB.purchases.forEach(function(p){ if(p.supplier && suppliers.indexOf(p.supplier)===-1) suppliers.push(p.supplier); });
+    supplierList.innerHTML = suppliers.map(function(s){ return '<option value="'+s+'">'; }).join('');
+  }
+  // Populate item name memory from past purchases AND products catalog
+  var itemsList = document.getElementById('purch-items-list');
+  if(itemsList){
+    var items = [];
+    DB.purchases.forEach(function(p){ (p.items||[]).forEach(function(item){ if(item.name && items.indexOf(item.name)===-1) items.push(item.name); }); });
+    DB.products.forEach(function(p){ if(p.name && items.indexOf(p.name)===-1) items.push(p.name); });
+    itemsList.innerHTML = items.map(function(s){ return '<option value="'+s+'">'; }).join('');
+  }
   // Stats
   var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.total)||0); },0);
   var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.total)||0); },0);
@@ -2065,8 +2200,13 @@ function renderLog(type, fid, sid, elId, global){
     else if(type==='harvest') html += '<strong>'+(r.crop||'Harvest')+'</strong>'+(r.yield?'<span class="badge bo" style="margin-left:5px;">'+r.yield+'</span>':'')+'<div class="log-meta">'+(r.date?fmtD(r.date):'')+(r.value?' · '+costLine(r.value,r.currency,r.unit):'')+(r.notes?' · '+r.notes:'')+'</div>';
     html += '</div>';
     var showCopy = (type==='spray' && !global);
+    var showSprayEdit = (type==='spray' && !global);
     var showIrrEdit = (type==='irrigation' && !global);
-    html += '<div style="display:flex;gap:6px;flex-shrink:0;">'+(showIrrEdit?'<button class="btn btn-edit btn-sm" onclick="editIrr(\''+r.id+'\')">✏️</button>':'')+(showCopy?'<button class="btn btn-outline btn-sm" onclick="openCopyModal(\'spray\',\''+r.id+'\')">📋</button>':'')+'<button class="log-del" onclick="delEntry(\''+type+'\',\''+r.id+'\',\''+r.fid+'\',\''+r.sid+'\',\''+elId+'\','+(global?'true':'false')+')">✕</button></div>';
+    html += '<div style="display:flex;gap:6px;flex-shrink:0;">'
+      +(showIrrEdit?'<button class="btn btn-edit btn-sm" onclick="editIrr(\''+r.id+'\')">✏️</button>':'')
+      +(showSprayEdit?'<button class="btn btn-edit btn-sm" onclick="editSpray(\''+r.id+'\')">✏️</button>':'')
+      +(showCopy?'<button class="btn btn-outline btn-sm" onclick="openCopyModal(\'spray\',\''+r.id+'\')">📋</button>':'')
+      +'<button class="log-del" onclick="delEntry(\''+type+'\',\''+r.id+'\',\''+r.fid+'\',\''+r.sid+'\',\''+elId+'\','+(global?'true':'false')+')">✕</button></div>';
     html += '</div>';
   });
   el.innerHTML = html;
@@ -2195,16 +2335,113 @@ function renderFertBySection(){
 }
 
 // ═══ DASHBOARD ═══
+function dashPopulateFields(){
+  var s = document.getElementById('dash-field'); if(!s) return;
+  s.innerHTML = '<option value="">All Fields</option>'+smartSort(DB.fields).map(function(f){ return '<option value="'+f.id+'">'+f.name+'</option>'; }).join('');
+}
+function dashPopulateSections(){
+  var fid = g('dash-field');
+  var s = document.getElementById('dash-section'); if(!s) return;
+  if(!fid){ s.innerHTML='<option value="">All Sections</option>'; return; }
+  var f = DB.fields.find(function(x){ return String(x.id)===String(fid); });
+  s.innerHTML = '<option value="">All Sections</option>'+(f?smartSort(f.sections).map(function(sec){ return '<option value="'+sec.id+'">'+sec.name+'</option>'; }).join(''):'');
+}
 function renderDashboard(){
-  var el=document.getElementById('dash-content'); if(!el) return;
-  var fc=DB.fertilizer.reduce(function(s,r){ var p=r.products||[{cost:r.cost,currency:r.currency,unit:r.unit}]; return s+p.reduce(function(a,x){ return (x.currency!=='MXN'&&(x.unit==='total'||!x.unit))?a+(parseFloat(x.cost)||0):a; },0); },0);
-  var pc=DB.pesticide.reduce(function(s,r){ return (r.currency!=='MXN'&&(r.unit==='total'||!r.unit))?s+(parseFloat(r.cost)||0):s; },0);
-  var lc=DB.labour.reduce(function(s,r){ return (r.currency!=='MXN')?s+(parseFloat(r.amount)||0):s; },0);
-  var hv=DB.harvest.reduce(function(s,r){ return (r.currency!=='MXN'&&(r.unit==='total'||!r.unit))?s+(parseFloat(r.value)||0):s; },0);
-  var total=fc+pc+lc;
-  var profit=hv-total;
-  var irrHrs=DB.irrigation.reduce(function(s,r){ return s+r.hours; },0).toFixed(1);
-  el.innerHTML='<div class="stats" style="grid-template-columns:repeat(2,1fr);"><div class="stat"><div class="stat-val or">$'+hv.toFixed(0)+'</div><div class="stat-lab">Harvest Value</div></div><div class="stat"><div class="stat-val" style="color:var(--danger);">$'+total.toFixed(0)+'</div><div class="stat-lab">Total Costs</div></div><div class="stat"><div class="stat-val '+(profit>=0?'':'or')+'">$'+profit.toFixed(0)+'</div><div class="stat-lab">Net '+(profit>=0?'Profit':'Loss')+'</div></div><div class="stat"><div class="stat-val bl">'+irrHrs+'</div><div class="stat-lab">Irrigation Hrs</div></div></div><div class="stats" style="grid-template-columns:repeat(3,1fr);"><div class="stat"><div class="stat-val" style="color:var(--danger);">$'+fc.toFixed(0)+'</div><div class="stat-lab">Fertilizer</div></div><div class="stat"><div class="stat-val" style="color:var(--danger);">$'+pc.toFixed(0)+'</div><div class="stat-lab">Pesticide</div></div><div class="stat"><div class="stat-val" style="color:var(--danger);">$'+lc.toFixed(0)+'</div><div class="stat-lab">Labour</div></div></div><p style="font-size:11px;color:var(--muted);margin-top:4px;">Totals include USD entries priced as a flat total only. Per-bag/per-ton/per-liter costs and MXN entries are shown in their module history but excluded here to avoid mixing units or currencies.</p>';
+  var el = document.getElementById('dash-content'); if(!el) return;
+  var view = g('dash-view');
+  var fid = g('dash-field');
+  var sid = g('dash-section');
+  var year = new Date().getFullYear().toString();
+
+  // Show/hide field and section dropdowns
+  var fw = document.getElementById('dash-field-wrap');
+  var sw = document.getElementById('dash-section-wrap');
+  if(fw) fw.style.display = view==='field' ? '' : 'none';
+  if(view==='field'){ dashPopulateFields(); dashPopulateSections(); }
+  if(sw) sw.style.display = (view==='field' && fid) ? '' : 'none';
+
+  // Filter function
+  function matchRow(r){
+    if(r.date && !r.date.startsWith(year) && !r.start) return false;
+    if(r.start && !r.start.startsWith(year)) return false;
+    if(fid && String(r.fid)!==String(fid)) return false;
+    if(sid && String(r.sid)!==String(sid)) return false;
+    return true;
+  }
+  function matchLabour(r){
+    if(r.date && !r.date.startsWith(year)) return false;
+    if(fid){ var fidsArr = r.fids&&r.fids.length?r.fids:(r.fid?[r.fid]:[]); if(fidsArr.indexOf(String(fid))===-1) return false; }
+    return true;
+  }
+
+  // Calculate costs
+  var fertCost = DB.fertilizer.filter(matchRow).reduce(function(s,r){
+    return s+(r.products||[]).reduce(function(a,p){ return a+(parseFloat(p.cost)||0); },0);
+  },0);
+  var pestCost = DB.pesticide.filter(matchRow).reduce(function(s,r){ return s+(parseFloat(r.cost)||0); },0);
+  var sprayCost = DB.spray.filter(matchRow).reduce(function(s,r){
+    return s+(r.chemicals||[]).reduce(function(a,c){ return a+(parseFloat(c.cost)||0); },0);
+  },0);
+  var labCost = DB.labour.filter(matchLabour).reduce(function(s,r){ return s+(parseFloat(r.amount)||0); },0);
+  var irrHrs = DB.irrigation.filter(matchRow).reduce(function(s,r){ return s+r.hours; },0);
+  var totalCost = fertCost+pestCost+sprayCost+labCost;
+
+  // Calculate returns
+  var grossReturn = DB.harvest.filter(matchRow).reduce(function(s,r){ return s+(parseFloat(r.value)||0); },0);
+  var netProfit = grossReturn - totalCost;
+
+  var html = '';
+
+  // ── Year badge ──
+  html += '<div style="text-align:right;font-size:12px;color:var(--muted);margin-bottom:8px;">📅 '+year+' Season'+(fid?' · '+fN(fid):'')+(sid?' · '+sN(fid,sid):'')+'</div>';
+
+  // ── Top 3 big numbers ──
+  html += '<div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px;">';
+  html += '<div class="stat"><div class="stat-val" style="color:var(--leaf);">'+fmtCur(grossReturn,'USD')+'</div><div class="stat-lab">Gross Returns</div></div>';
+  html += '<div class="stat"><div class="stat-val" style="color:var(--danger);">'+fmtCur(totalCost,'USD')+'</div><div class="stat-lab">Total Costs</div></div>';
+  html += '<div class="stat"><div class="stat-val" style="color:'+(netProfit>=0?'var(--leaf)':'var(--danger)')+';">'+fmtCur(Math.abs(netProfit),'USD')+'</div><div class="stat-lab">'+(netProfit>=0?'Net Profit':'Net Loss')+'</div></div>';
+  html += '</div>';
+
+  // ── Cost breakdown ──
+  html += '<div class="card"><h3 style="margin-bottom:10px;">💰 Cost Breakdown</h3>';
+  var costItems = [
+    {label:'🌿 Fertilizer', val:fertCost},
+    {label:'🛡️ Pesticide', val:pestCost},
+    {label:'🧪 Spray', val:sprayCost},
+    {label:'👷 Labour', val:labCost}
+  ];
+  costItems.forEach(function(item){
+    if(!item.val) return;
+    var pct = totalCost>0 ? Math.round(item.val/totalCost*100) : 0;
+    html += '<div style="margin-bottom:8px;">';
+    html += '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;"><span>'+item.label+'</span><span style="font-weight:700;">'+fmtCur(item.val,'USD')+' <span style="color:var(--muted);font-weight:400;">('+pct+'%)</span></span></div>';
+    html += '<div style="height:6px;background:var(--border);border-radius:3px;"><div style="height:6px;background:var(--danger);border-radius:3px;width:'+pct+'%;"></div></div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // ── Irrigation ──
+  html += '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;"><div><div style="font-size:18px;font-weight:800;color:var(--water);">'+irrHrs.toFixed(1)+' hrs</div><div style="font-size:12px;color:var(--muted);">💧 Irrigation</div></div></div></div>';
+
+  // ── Per-field breakdown (if whole farm view) ──
+  if(view==='farm' && !fid && DB.fields.length){
+    html += '<div class="card"><h3 style="margin-bottom:10px;">📍 By Field</h3>';
+    smartSort(DB.fields).forEach(function(f){
+      var fCost = DB.fertilizer.filter(function(r){ return String(r.fid)===String(f.id)&&r.date&&r.date.startsWith(year); }).reduce(function(s,r){ return s+(r.products||[]).reduce(function(a,p){ return a+(parseFloat(p.cost)||0); },0); },0);
+      fCost += DB.pesticide.filter(function(r){ return String(r.fid)===String(f.id)&&r.date&&r.date.startsWith(year); }).reduce(function(s,r){ return s+(parseFloat(r.cost)||0); },0);
+      fCost += DB.spray.filter(function(r){ return String(r.fid)===String(f.id)&&r.date&&r.date.startsWith(year); }).reduce(function(s,r){ return s+(r.chemicals||[]).reduce(function(a,c){ return a+(parseFloat(c.cost)||0); },0); },0);
+      fCost += DB.labour.filter(function(r){ var fidsArr=r.fids&&r.fids.length?r.fids:(r.fid?[r.fid]:[]); return fidsArr.indexOf(String(f.id))>-1&&r.date&&r.date.startsWith(year); }).reduce(function(s,r){ return s+(parseFloat(r.amount)||0); },0);
+      var fRet = DB.harvest.filter(function(r){ return String(r.fid)===String(f.id)&&r.date&&r.date.startsWith(year); }).reduce(function(s,r){ return s+(parseFloat(r.value)||0); },0);
+      var fNet = fRet-fCost;
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">';
+      html += '<div style="font-weight:600;">'+f.name+'<div style="font-size:11px;color:var(--muted);">'+f.sections.length+' sections · '+(f.area||'')+'</div></div>';
+      html += '<div style="text-align:right;"><div style="font-size:13px;color:var(--danger);">Costs: '+fmtCur(fCost,'USD')+'</div><div style="font-size:13px;color:var(--leaf);">Returns: '+fmtCur(fRet,'USD')+'</div><div style="font-size:12px;font-weight:700;color:'+(fNet>=0?'var(--leaf)':'var(--danger)')+';">'+(fNet>=0?'Profit':'Loss')+': '+fmtCur(Math.abs(fNet),'USD')+'</div></div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
 }
 
 // ═══ GLOBAL VIEWS ═══
