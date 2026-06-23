@@ -578,21 +578,74 @@ function renderFields(){
   var html = '';
   var sorted = smartSort(DB.fields);
   sorted.forEach(function(f){
-    var area = f.area || '';
-    html += '<div class="row">';
-    html += '<div class="row-body" onclick="openField(\''+f.id+'\')">';
-    html += '<strong>'+f.name+'</strong>';
-    if(area) html += ' <span class="badge bg">'+area+'</span>';
-    if(f.desc) html += '<div class="row-meta">'+f.desc+'</div>';
-    html += '<div class="row-meta">'+f.sections.length+' section'+(f.sections.length!==1?'s':'')+'</div>';
+    // ── Irrigation status per section ──
+    var now = new Date();
+    var sectionStatuses = f.sections.map(function(s){
+      var rows = DB.irrigation.filter(function(r){ return String(r.fid)===String(f.id)&&String(r.sid)===String(s.id); });
+      var active = rows.some(function(r){ return now>=new Date(r.start)&&now<=new Date(r.end); });
+      if(active) return 'active';
+      if(!rows.length) return 'none';
+      var lastEnd = rows.reduce(function(l,r){ return (!l||new Date(r.end)>new Date(l))?r.end:l; }, null);
+      var days = Math.floor((now-new Date(lastEnd))/86400000);
+      if(days>=10) return 'red';
+      if(days>=7) return 'orange';
+      return 'ok';
+    });
+
+    // ── Crop breakdown ──
+    var cropMap = {};
+    f.sections.forEach(function(s){
+      if(!s.crop) return;
+      var areaNum = s.area ? parseFloat(s.area) : 0;
+      if(!cropMap[s.crop]) cropMap[s.crop] = 0;
+      cropMap[s.crop] += areaNum;
+    });
+    var cropTags = Object.keys(cropMap).map(function(c){
+      return '<span class="badge bg" style="margin-right:4px;">'+c+(cropMap[c]?' · '+cropMap[c]+' ha':'')+'</span>';
+    }).join('');
+
+    // ── Section grid visual ──
+    var cols = Math.ceil(Math.sqrt(f.sections.length)) || 1;
+    var gridCells = sectionStatuses.map(function(status, i){
+      var s = f.sections[i];
+      var color = status==='active'?'var(--water)':status==='red'?'var(--danger)':status==='orange'?'var(--harvest)':status==='ok'?'var(--leaf)':'var(--border)';
+      var bg = status==='active'?'var(--waterlight)':status==='red'?'#FBEAE8':status==='orange'?'var(--harvestlight)':status==='ok'?'var(--leaflight)':'var(--bg)';
+      return '<div style="background:'+bg+';border:2px solid '+color+';border-radius:6px;padding:3px;display:flex;align-items:center;justify-content:center;min-height:36px;cursor:pointer;font-size:10px;font-weight:700;color:var(--soil);text-align:center;line-height:1.1;" onclick="openSection(\''+f.id+'\',\''+s.id+'\')">'+(s.type==='pivot'?'🌀':'')+s.name+'</div>';
+    }).join('');
+
+    // ── Stats row ──
+    var activeCount = sectionStatuses.filter(function(s){ return s==='active'; }).length;
+    var redCount = sectionStatuses.filter(function(s){ return s==='red'; }).length;
+    var orangeCount = sectionStatuses.filter(function(s){ return s==='orange'; }).length;
+
+    html += '<div style="background:var(--card);border:1.5px solid var(--border);border-radius:14px;margin-bottom:14px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">';
+
+    // Header
+    html += '<div style="background:var(--soil);padding:12px 14px;display:flex;justify-content:space-between;align-items:center;">';
+    html += '<div onclick="openField(\''+f.id+'\')" style="flex:1;cursor:pointer;"><div style="font-size:16px;font-weight:800;color:var(--wheat);">'+f.name+'</div>';
+    html += '<div style="font-size:12px;color:var(--straw);margin-top:2px;">'+(f.area||'')+(f.area?' · ':'')+f.sections.length+' section'+(f.sections.length!==1?'s':'')+'</div></div>';
+    html += '<div style="display:flex;gap:6px;">';
+    html += '<button class="btn btn-edit btn-sm" style="background:rgba(255,255,255,0.15);border:none;color:var(--wheat);" onclick="editField(\''+f.id+'\')">✏️</button>';
+    var delKey = 'f'+f.id; DEL[delKey] = f.id;
+    html += '<button class="btn-del" style="opacity:0.8;" onclick="delField(\''+delKey+'\')">🗑️</button>';
+    html += '</div></div>';
+
+    // Section grid
+    html += '<div style="padding:12px 14px 8px;" onclick="openField(\''+f.id+'\')" >';
+    html += '<div style="display:grid;grid-template-columns:repeat('+cols+',1fr);gap:5px;margin-bottom:10px;">'+gridCells+'</div>';
+
+    // Crop breakdown
+    if(cropTags) html += '<div style="margin-bottom:8px;">'+cropTags+'</div>';
+
+    // Status badges
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+    if(activeCount) html += '<span class="badge bb">💧 '+activeCount+' irrigating</span>';
+    if(orangeCount) html += '<span class="badge" style="background:var(--harvest);color:#fff;">🟠 '+orangeCount+' overdue</span>';
+    if(redCount) html += '<span class="badge" style="background:var(--danger);color:#fff;">🔴 '+redCount+' critical</span>';
+    if(!activeCount&&!orangeCount&&!redCount) html += '<span class="badge bk">✅ All sections OK</span>';
     html += '</div>';
-    var delKey = 'f'+f.id;
-    DEL[delKey] = f.id;
-    html += '<div class="row-actions">';
-    html += '<button class="btn btn-edit btn-sm" onclick="editField(\''+f.id+'\')">✏️</button>';
-    html += '<button class="btn-del" onclick="delField(\''+delKey+'\')">🗑️</button>';
-    html += '</div>';
-    html += '</div>';
+
+    html += '</div></div>';
   });
   el.innerHTML = html;
 }
