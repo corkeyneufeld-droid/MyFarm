@@ -1094,21 +1094,26 @@ function addFertRow(prefill){
   if(prefill){
     div.querySelector('.fr-name').value = prefill.name||'';
     div.querySelector('.fr-brand').value = prefill.brand||'';
-    // Try to parse stored amount back into total/rate fields
-    var stored = prefill.amount||'';
-    var match = stored.match(/^([\d.]+)\s*(\w+)(?:\/(ha|ac))?$/);
-    if(match){
-      var storedNum = parseFloat(match[1]);
-      var storedUnit = match[2];
-      var storedIsRate = !!match[3];
-      div.querySelector('.fr-amt-unit').value = storedUnit.replace(/\/(ha|ac)/,'').trim();
-      if(storedIsRate) div.querySelector('.fr-rate-amt').value = storedNum;
-      else div.querySelector('.fr-total-amt').value = storedNum;
-      div.querySelector('.fr-amt').value = stored;
-      calcFertDosage(div);
-    } else if(stored){
-      div.querySelector('.fr-amt').value = stored;
+    // Use stored dosage values first, then fall back to parsing amount string
+    if(prefill.rateUnit) div.querySelector('.fr-amt-unit').value = prefill.rateUnit;
+    if(prefill.ratePerHa){
+      div.querySelector('.fr-rate-amt').value = prefill.ratePerHa;
+    } else if(prefill.totalApplied){
+      div.querySelector('.fr-total-amt').value = prefill.totalApplied;
+    } else {
+      var stored = prefill.amount||'';
+      var match = stored.match(/^([\d.]+)\s*(\w+)(?:\/(ha|ac))?$/);
+      if(match){
+        var storedNum = parseFloat(match[1]);
+        var storedUnit = match[2];
+        var storedIsRate = !!match[3];
+        div.querySelector('.fr-amt-unit').value = storedUnit.replace(/\/(ha|ac)/,'').trim();
+        if(storedIsRate) div.querySelector('.fr-rate-amt').value = storedNum;
+        else div.querySelector('.fr-total-amt').value = storedNum;
+      }
     }
+    div.querySelector('.fr-amt').value = prefill.amount||'';
+    calcFertDosage(div);
     div.querySelector('.fr-cost').value = prefill.cost||'';
     div.querySelector('.fr-cur').value = prefill.currency||'USD';
     div.querySelector('.fr-unit').value = prefill.unit||'total';
