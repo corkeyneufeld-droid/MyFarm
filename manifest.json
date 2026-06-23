@@ -1,0 +1,25 @@
+{
+  "name": "MyFarm",
+  "short_name": "MyFarm",
+  "description": "Field and harvest log for MyFarm",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#2C1A0E",
+  "theme_color": "#2C1A0E",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
