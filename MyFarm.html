@@ -195,6 +195,11 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 </div>
 <div id="page-fertilizer" class="page">
   <h1>🌿 Fertilizer — All Fields</h1>
+  <div class="form-row" style="margin-bottom:8px;">
+    <div class="fg"><label>Field</label><select id="gfert-field" onchange="gfertPopulateSections();renderGlobalFertTotals()"><option value="">All Fields</option></select></div>
+    <div class="fg"><label>Section</label><select id="gfert-section" onchange="renderGlobalFertTotals()"><option value="">All Sections</option></select></div>
+  </div>
+  <div id="gfert-totals"></div>
   <div class="mod-tabs" id="fert-view-tabs">
     <button class="mod-tab active" onclick="showFertView('all',this)">All</button>
     <button class="mod-tab" onclick="showFertView('field',this)">By Field</button>
@@ -202,8 +207,24 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   </div>
   <div id="g-fert-log"></div>
 </div>
-<div id="page-pesticide" class="page"><h1>🛡️ Pesticide — All Fields</h1><div id="g-pest-log"></div></div>
-<div id="page-spray" class="page"><h1>🧪 Spray Records — All Fields</h1><div id="g-spray-log"></div></div>
+<div id="page-pesticide" class="page">
+  <h1>🛡️ Pesticide — All Fields</h1>
+  <div class="form-row" style="margin-bottom:8px;">
+    <div class="fg"><label>Field</label><select id="gpest-field" onchange="gpestPopulateSections();renderGlobalPestTotals()"><option value="">All Fields</option></select></div>
+    <div class="fg"><label>Section</label><select id="gpest-section" onchange="renderGlobalPestTotals()"><option value="">All Sections</option></select></div>
+  </div>
+  <div id="gpest-totals"></div>
+  <div id="g-pest-log"></div>
+</div>
+<div id="page-spray" class="page">
+  <h1>🧪 Spray — All Fields</h1>
+  <div class="form-row" style="margin-bottom:8px;">
+    <div class="fg"><label>Field</label><select id="gspray-field" onchange="gsprayPopulateSections();renderGlobalSprayTotals()"><option value="">All Fields</option></select></div>
+    <div class="fg"><label>Section</label><select id="gspray-section" onchange="renderGlobalSprayTotals()"><option value="">All Sections</option></select></div>
+  </div>
+  <div id="gspray-totals"></div>
+  <div id="g-spray-log"></div>
+</div>
 <div id="page-harvest" class="page"><h1>🌽 Harvest — All Fields</h1><div class="stats" id="g-harv-stats"></div><div id="g-harv-log"></div></div>
 <div id="page-labour" class="page">
   <h1>👷 Labour / Workers</h1><p class="sub">Track daily crew wages by headcount and rate per person.</p>
@@ -2288,28 +2309,44 @@ function calcPurchTaxFromPct(){
   if(taxEl) taxEl.value = tax.toFixed(2);
   calcPurchGrandTotal();
 }
+var convertTimer = null;
+var convertEl = null;
+var convertOriginal = null;
+function startConvert(el, amount, currency){
+  var rate = parseFloat(localStorage.getItem('myfarm_exch_rate'))||0;
+  if(!rate) return;
+  var valEl = el.querySelector('.stat-val') || el.querySelector('div');
+  convertEl = valEl;
+  convertOriginal = valEl ? valEl.textContent : '';
+  convertTimer = setTimeout(function(){
+    if(!convertEl) return;
+    var amt = parseFloat(amount)||0;
+    if(currency==='MXN'){
+      convertEl.textContent = '$'+(amt/rate).toFixed(2)+' USD';
+    } else {
+      convertEl.textContent = 'MX$'+(amt*rate).toFixed(2);
+    }
+    convertEl.style.color = 'var(--water)';
+  }, 600);
+}
+function endConvert(){
+  clearTimeout(convertTimer);
+  if(convertEl && convertOriginal !== null){
+    convertEl.textContent = convertOriginal;
+    convertEl.style.color = '';
+  }
+  convertEl = null; convertOriginal = null;
+}
 function saveExchRate(){
-  var rate = parseFloat(g('exch-rate'))||0;
+  var el = document.getElementById('exch-rate');
+  var rate = el ? parseFloat(el.value)||0 : 0;
   localStorage.setItem('myfarm_exch_rate', rate);
-  updateExchSummary();
+  renderPurchases();
 }
 function loadExchRate(){
-  var rate = parseFloat(localStorage.getItem('myfarm_exch_rate'))||0;
-  var el = document.getElementById('exch-rate');
-  if(el && rate) el.value = rate;
-  return rate;
+  return parseFloat(localStorage.getItem('myfarm_exch_rate'))||0;
 }
-function updateExchSummary(){
-  var rate = parseFloat(g('exch-rate'))||0;
-  var el = document.getElementById('exch-summary');
-  if(!el) return;
-  if(!rate){ el.textContent=''; return; }
-  var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.total)||0); },0);
-  var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.total)||0); },0);
-  var totalInMXN = totalMXN + totalUSD*rate;
-  var totalInUSD = totalUSD + totalMXN/rate;
-  el.innerHTML = 'All purchases combined: <strong>MX$'+totalInMXN.toFixed(2)+'</strong> · <strong>$'+totalInUSD.toFixed(2)+' USD</strong>';
-}
+function updateExchSummary(){}
 function renderPurchases(){
   loadExchRate();
   var btn = document.getElementById('purch-btn');
@@ -2337,26 +2374,31 @@ function renderPurchases(){
   var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
   var stats = document.getElementById('purch-stats');
   if(stats){
-    var allInMXN = rate>0 ? (totalMXN + totalUSD*rate).toFixed(2) : null;
-    var allInUSD = rate>0 ? (totalUSD + totalMXN/rate).toFixed(2) : null;
+    var allInMXN = rate>0 ? totalMXN + totalUSD*rate : null;
+    var allInUSD = rate>0 ? totalUSD + totalMXN/rate : null;
+    var mxnHint = rate>0 ? 'Long-press to see in USD' : 'Set exchange rate to convert';
+    var usdHint = rate>0 ? 'Long-press to see in MXN' : 'Set exchange rate to convert';
     stats.innerHTML =
-      '<div class="card" style="border:1.5px solid var(--water);background:var(--waterlight);margin-bottom:12px;">'+
-      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;">'+
-      '<div class="stat"><div class="stat-val or">'+fmtCur(totalMXN,'MXN')+'</div><div class="stat-lab">Total Spent (MXN)</div></div>'+
-      '<div class="stat"><div class="stat-val or">'+fmtCur(totalUSD,'USD')+'</div><div class="stat-lab">Total Spent (USD)</div></div>'+
-      '</div>'+
-      '<div style="border-top:1px solid var(--border);padding-top:10px;">'+
-      '<div style="font-size:12px;font-weight:600;color:var(--water);margin-bottom:6px;">💱 Exchange Rate</div>'+
-      '<div class="form-row" style="margin-bottom:6px;align-items:flex-end;">'+
-      '<div class="fg"><label>1 USD =</label><input type="number" id="exch-rate" step="0.01" placeholder="e.g. 17.50" value="'+(rate||'')+'" oninput="saveExchRate();renderPurchases()"/></div>'+
-      '<div style="padding-bottom:10px;font-size:13px;color:var(--muted);padding-left:8px;">MXN Pesos</div>'+
-      '</div>'+
-      (rate>0 && (totalMXN||totalUSD) ?
-        '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">'+
-        '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:16px;">MX$'+parseFloat(allInMXN).toLocaleString('en',{minimumFractionDigits:2})+'</div><div class="stat-lab">All in MXN</div></div>'+
-        '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:16px;">$'+parseFloat(allInUSD).toLocaleString('en',{minimumFractionDigits:2})+'</div><div class="stat-lab">All in USD</div></div>'+
-        '</div>' : '<div style="font-size:12px;color:var(--muted);">Enter rate above to see combined totals</div>')+
-      '</div></div>';
+      '<div class="card" style="border:1.5px solid var(--water);background:var(--waterlight);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+      '<h3 style="color:var(--water);">💰 Totals</h3>' +
+      '<div style="display:flex;align-items:center;gap:6px;font-size:12px;">' +
+      '<span style="color:var(--muted);">💱 1 USD =</span>' +
+      '<input type="number" id="exch-rate" step="0.01" placeholder="e.g. 17.50" value="'+(rate||'')+'" style="width:80px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px;" oninput="saveExchRate()"/>' +
+      '<span style="color:var(--muted);">MXN</span>' +
+      '</div></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+      '<div class="stat" style="cursor:pointer;" ontouchstart="startConvert(this,\''+totalMXN.toFixed(2)+'\',\'MXN\')" ontouchend="endConvert()" onmousedown="startConvert(this,\''+totalMXN.toFixed(2)+'\',\'MXN\')" onmouseup="endConvert()" onmouseleave="endConvert()">' +
+      '<div class="stat-val or" id="stat-mxn">MX$'+totalMXN.toFixed(2)+'</div><div class="stat-lab">Total Spent (MXN)<br><span style="font-size:10px;color:var(--water);">'+mxnHint+'</span></div></div>' +
+      '<div class="stat" style="cursor:pointer;" ontouchstart="startConvert(this,\''+totalUSD.toFixed(2)+'\',\'USD\')" ontouchend="endConvert()" onmousedown="startConvert(this,\''+totalUSD.toFixed(2)+'\',\'USD\')" onmouseup="endConvert()" onmouseleave="endConvert()">' +
+      '<div class="stat-val or" id="stat-usd">$'+totalUSD.toFixed(2)+'</div><div class="stat-lab">Total Spent (USD)<br><span style="font-size:10px;color:var(--water);">'+usdHint+'</span></div></div>' +
+      '</div>' +
+      (allInMXN!==null ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+      '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">MX$'+allInMXN.toFixed(2)+'</div><div class="stat-lab">All in MXN</div></div>' +
+      '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">$'+allInUSD.toFixed(2)+'</div><div class="stat-lab">All in USD</div></div>' +
+      '</div>' : '') +
+      '</div>'
+    ;
   }
   // Log
   var el = document.getElementById('purch-log'); if(!el) return;
@@ -2510,54 +2552,120 @@ function renderFertSummary(fid, sid){
   var area = getSectionArea();
   var areaNum = area ? area.num : null;
   var areaUnit = area ? area.unit : 'ha';
-
-  // Filter to this section, current year only
   var entries = DB.fertilizer.filter(function(r){
-    return String(r.fid)===String(fid) && String(r.sid)===String(sid) &&
-           r.date && r.date.startsWith(currentYear);
+    return String(r.fid)===String(fid) && String(r.sid)===String(sid) && r.date && r.date.startsWith(currentYear);
   });
-
-  if(!entries.length){
-    el.innerHTML = '';
-    return;
-  }
-
-  // Accumulate per product
+  if(!entries.length){ el.innerHTML=''; return; }
   var totals = {};
   entries.forEach(function(entry){
     (entry.products||[]).forEach(function(p){
       var key = p.name;
-      if(!totals[key]) totals[key] = { rateTotal:0, totalApplied:0, unit:p.rateUnit||'', appCount:0, costTotal:0, currency:'' };
+      if(!totals[key]) totals[key] = { rateTotal:0, totalApplied:0, unit:p.rateUnit||'', appCount:0 };
       totals[key].appCount++;
       if(p.ratePerHa) totals[key].rateTotal += parseFloat(p.ratePerHa)||0;
       if(p.totalApplied) totals[key].totalApplied += parseFloat(p.totalApplied)||0;
       if(p.rateUnit) totals[key].unit = p.rateUnit;
-      if(p.cost) totals[key].costTotal += parseFloat(p.cost)||0;
-      if(p.currency) totals[key].currency = p.currency;
     });
   });
-
   var keys = Object.keys(totals);
   if(!keys.length){ el.innerHTML=''; return; }
-
-  var grandCost = Object.values(totals).reduce(function(s,t){ return s+t.costTotal; },0);
   var html = '<div class="card" style="border:2px solid var(--leaf);background:var(--leaflight);">';
-  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">';
-  html += '<h3 style="color:var(--leaf);">📊 '+currentYear+' Season Totals</h3>';
-  if(grandCost>0) html += '<span style="font-size:13px;font-weight:700;color:var(--danger);">Total Cost: '+fmtCur(grandCost,'USD')+'</span>';
-  html += '</div>';
-  html += '<p style="font-size:12px;color:var(--muted);margin-bottom:10px;">'+entries.length+' application'+(entries.length!==1?'s':'')+' · '+areaNum+' '+areaUnit+'</p>';
+  html += '<h3 style="color:var(--leaf);margin-bottom:6px;">📊 '+currentYear+' Season Totals</h3>';
+  html += '<p style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+entries.length+' application'+(entries.length!==1?'s':'')+' · '+areaNum+' '+areaUnit+'</p>';
   html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-  html += '<tr style="border-bottom:2px solid var(--leaf);"><th style="text-align:left;padding:4px 4px;color:var(--soil);">Product</th><th style="text-align:right;padding:4px 4px;color:var(--soil);">Rate/'+areaUnit+'</th><th style="text-align:right;padding:4px 4px;color:var(--soil);">Total</th><th style="text-align:right;padding:4px 4px;color:var(--soil);">Cost</th></tr>';
+  html += '<tr style="border-bottom:2px solid var(--leaf);"><th style="text-align:left;padding:4px;">Product</th><th style="text-align:right;padding:4px;">Rate/'+areaUnit+'</th><th style="text-align:right;padding:4px;">Total Applied</th><th style="text-align:right;padding:4px;">Apps</th></tr>';
   keys.sort().forEach(function(name){
     var t = totals[name];
-    var rateStr = t.rateTotal ? '<strong style="color:var(--leaf);">'+t.rateTotal.toFixed(1)+' '+t.unit+'/'+areaUnit+'</strong>' : '—';
-    var totalStr = t.totalApplied ? t.totalApplied.toFixed(1)+' '+t.unit : '—';
-    var costStr = t.costTotal>0 ? fmtCur(t.costTotal, t.currency||'USD') : '—';
-    html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px 4px;">'+name+'</td><td style="text-align:right;padding:4px 4px;">'+rateStr+'</td><td style="text-align:right;padding:4px 4px;color:var(--muted);">'+totalStr+'</td><td style="text-align:right;padding:4px 4px;color:var(--danger);font-weight:600;">'+costStr+'</td></tr>';
+    html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">'+name+'</td><td style="text-align:right;padding:4px;color:var(--leaf);font-weight:700;">'+(t.rateTotal?t.rateTotal.toFixed(1)+' '+t.unit+'/'+areaUnit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+(t.totalApplied?t.totalApplied.toFixed(1)+' '+t.unit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+t.appCount+'</td></tr>';
   });
   html += '</table></div>';
   el.innerHTML = html;
+}
+
+// ═══ GLOBAL ACCUMULATED TOTALS (Fert / Pest / Spray) ═══
+function gPopulateFieldSelect(selId){
+  var s=document.getElementById(selId); if(!s) return;
+  s.innerHTML='<option value="">All Fields</option>'+smartSort(DB.fields).map(function(f){ return '<option value="'+f.id+'">'+f.name+'</option>'; }).join('');
+}
+function gPopulateSections(fieldSelId, secSelId){
+  var fid = document.getElementById(fieldSelId) ? document.getElementById(fieldSelId).value : '';
+  var s = document.getElementById(secSelId); if(!s) return;
+  if(!fid){ s.innerHTML='<option value="">All Sections</option>'; return; }
+  var f = DB.fields.find(function(x){ return String(x.id)===String(fid); });
+  s.innerHTML='<option value="">All Sections</option>'+(f?smartSort(f.sections).map(function(sec){ return '<option value="'+sec.id+'">'+sec.name+'</option>'; }).join(''):'');
+}
+function gfertPopulateSections(){ gPopulateSections('gfert-field','gfert-section'); }
+function gpestPopulateSections(){ gPopulateSections('gpest-field','gpest-section'); }
+function gsprayPopulateSections(){ gPopulateSections('gspray-field','gspray-section'); }
+
+function buildGlobalTotalsHtml(rows, getProducts, color, areaUnit){
+  var year = new Date().getFullYear().toString();
+  var yearRows = rows.filter(function(r){ return r.date&&r.date.startsWith(year); });
+  var allRows = rows;
+  function buildTable(rr, title){
+    if(!rr.length) return '';
+    var totals = {};
+    rr.forEach(function(r){
+      getProducts(r).forEach(function(p){
+        var key = p.name;
+        if(!totals[key]) totals[key] = { totalApplied:0, unit:p.rateUnit||p.unit||'', appCount:0 };
+        totals[key].appCount++;
+        if(p.totalApplied) totals[key].totalApplied += parseFloat(p.totalApplied)||0;
+        if(p.rateUnit||p.unit) totals[key].unit = p.rateUnit||p.unit||'';
+      });
+    });
+    var keys = Object.keys(totals);
+    if(!keys.length) return '';
+    var html = '<div style="margin-bottom:10px;"><strong style="font-size:12px;color:var(--muted);">'+title+'</strong>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">';
+    html += '<tr style="border-bottom:1px solid '+color+';"><th style="text-align:left;padding:3px;">Product</th><th style="text-align:right;padding:3px;">Total Applied</th><th style="text-align:right;padding:3px;">Applications</th></tr>';
+    keys.sort().forEach(function(name){
+      var t=totals[name];
+      html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:3px;">'+name+'</td><td style="text-align:right;padding:3px;font-weight:600;color:'+color+';">'+(t.totalApplied?t.totalApplied.toFixed(1)+' '+t.unit:'—')+'</td><td style="text-align:right;padding:3px;color:var(--muted);">'+t.appCount+'</td></tr>';
+    });
+    html += '</table></div>';
+    return html;
+  }
+  var html = '<div class="card" style="border:2px solid '+color+';margin-bottom:10px;">';
+  html += '<h3 style="color:'+color+';margin-bottom:8px;">📊 Accumulated Totals</h3>';
+  var t1 = buildTable(yearRows, new Date().getFullYear()+' Season ('+yearRows.length+' applications)');
+  var t2 = buildTable(allRows, 'All Time ('+allRows.length+' applications)');
+  if(!t1&&!t2){ html += '<p style="font-size:12px;color:var(--muted);">No entries yet.</p>'; }
+  if(t1) html += t1;
+  if(allRows.length > yearRows.length) html += t2;
+  html += '</div>';
+  return html;
+}
+
+function renderGlobalFertTotals(){
+  var el = document.getElementById('gfert-totals'); if(!el) return;
+  gPopulateFieldSelect('gfert-field');
+  var fid = document.getElementById('gfert-field') ? document.getElementById('gfert-field').value : '';
+  var sid = document.getElementById('gfert-section') ? document.getElementById('gfert-section').value : '';
+  var rows = DB.fertilizer.filter(function(r){
+    return (!fid||String(r.fid)===String(fid)) && (!sid||String(r.sid)===String(sid));
+  });
+  el.innerHTML = buildGlobalTotalsHtml(rows, function(r){ return r.products||[]; }, 'var(--leaf)', 'ha');
+}
+function renderGlobalPestTotals(){
+  var el = document.getElementById('gpest-totals'); if(!el) return;
+  gPopulateFieldSelect('gpest-field');
+  var fid = document.getElementById('gpest-field') ? document.getElementById('gpest-field').value : '';
+  var sid = document.getElementById('gpest-section') ? document.getElementById('gpest-section').value : '';
+  var rows = DB.pesticide.filter(function(r){
+    return (!fid||String(r.fid)===String(fid)) && (!sid||String(r.sid)===String(sid));
+  });
+  el.innerHTML = buildGlobalTotalsHtml(rows, function(r){ return [{name:r.name,totalApplied:r.totalApplied,rateUnit:r.rateUnit,unit:r.rateUnit||'L'}]; }, 'var(--purple)', 'ha');
+}
+function renderGlobalSprayTotals(){
+  var el = document.getElementById('gspray-totals'); if(!el) return;
+  gPopulateFieldSelect('gspray-field');
+  var fid = document.getElementById('gspray-field') ? document.getElementById('gspray-field').value : '';
+  var sid = document.getElementById('gspray-section') ? document.getElementById('gspray-section').value : '';
+  var rows = DB.spray.filter(function(r){
+    return (!fid||String(r.fid)===String(fid)) && (!sid||String(r.sid)===String(sid));
+  });
+  el.innerHTML = buildGlobalTotalsHtml(rows, function(r){ return r.chemicals||[]; }, 'var(--harvest)', 'ha');
 }
 
 function renderFertLog(fid, sid, elId, global){
@@ -2775,12 +2883,14 @@ function renderGlobal(id){
     renderElectric();
   }
   if(id==='fertilizer'){
+    renderGlobalFertTotals();
+    gfertPopulateSections();
     curFertView = 'all';
     document.querySelectorAll('#fert-view-tabs .mod-tab').forEach(function(t,i){ t.classList.toggle('active', i===0); });
     renderFertLog(null,null,'g-fert-log',true);
   }
-  if(id==='pesticide') renderGlobalLog('pesticide','g-pest-log');
-  if(id==='spray') renderGlobalLog('spray','g-spray-log');
+  if(id==='pesticide'){ renderGlobalPestTotals(); gpestPopulateSections(); renderGlobalLog('pesticide','g-pest-log'); }
+  if(id==='spray'){ renderGlobalSprayTotals(); gsprayPopulateSections(); renderGlobalLog('spray','g-spray-log'); }
   if(id==='harvest'){
     var v=DB.harvest.reduce(function(a,r){ return a+(parseFloat(r.value)||0); },0).toFixed(2);
     var s=document.getElementById('g-harv-stats');
