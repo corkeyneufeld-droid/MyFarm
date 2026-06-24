@@ -1983,25 +1983,58 @@ function addPurchItem(prefill){
   var div = document.createElement('div');
   div.id = 'pi-'+id;
   div.style.cssText = 'background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:6px;';
+  var CONT_TYPES = '<option value="bag">Bag</option><option value="jug">Jug</option><option value="bottle">Bottle</option><option value="drum">Drum</option><option value="box">Box</option><option value="unit">Unit</option>';
+  var CATS = '<option value="Fertilizer">Fertilizer</option><option value="Insecticide">Insecticide</option><option value="Herbicide">Herbicide</option><option value="Fungicide">Fungicide</option><option value="Pesticide">Pesticide</option><option value="Other">Other</option>';
+  var UNITS = '<option value="kg">kg</option><option value="L">L</option><option value="lb">lb</option><option value="gal">gal</option><option value="oz">oz</option>';
   div.innerHTML =
-    '<div class="form-row" style="margin-bottom:0;align-items:flex-end;">'+
-    '<div class="fg" style="flex:2"><label>Item</label><input type="text" class="pi-name" placeholder="e.g. Maxwell E/1" list="purch-items-list" autocomplete="off"/></div>'+
-    '<div class="fg"><label>Qty</label><input type="number" class="pi-qty" step="0.01" placeholder="16"/></div>'+
-    '<div class="fg"><label>Unit</label><select class="pi-unit"><option>L</option><option>kg</option><option>lb</option><option>gal</option><option>oz</option><option>units</option></select></div>'+
-    '<div class="fg"><label>Unit Price</label><input type="number" class="pi-price" step="0.01" placeholder="0.00" oninput="calcPurchTotal()"/></div>'+
+    '<div class="form-row" style="margin-bottom:5px;align-items:flex-end;">'+
+    '<div class="fg" style="flex:2"><label>Product Name</label><input type="text" class="pi-name" placeholder="e.g. Platinum 240" list="purch-items-list" autocomplete="off"/></div>'+
+    '<div class="fg"><label>Category</label><select class="pi-cat">'+CATS+'</select></div>'+
     '<div style="display:flex;align-items:flex-end;padding-bottom:2px;"><button class="btn-del" onclick="document.getElementById(\'pi-'+id+'\').remove();purchItems=purchItems.filter(function(x){return x!=='+id+'});calcPurchTotal();if(!purchItems.length)document.getElementById(\'purch-items-empty\').style.display=\'block\';">✕</button></div>'+
-    '</div>';
+    '</div>'+
+    '<div class="form-row" style="margin-bottom:0;align-items:flex-end;">'+
+    '<div class="fg"><label># of Containers</label><input type="number" class="pi-qty" step="1" min="1" placeholder="2" oninput="calcPurchItemTotal(this)"/></div>'+
+    '<div class="fg"><label>Container Type</label><select class="pi-container">'+CONT_TYPES+'</select></div>'+
+    '<div class="fg"><label>Size per Container</label><input type="number" class="pi-size" step="0.01" placeholder="e.g. 5" oninput="calcPurchItemTotal(this)"/></div>'+
+    '<div class="fg"><label>Unit</label><select class="pi-unit">'+UNITS+'</select></div>'+
+    '</div>'+
+    '<div class="form-row" style="margin-bottom:5px;align-items:flex-end;">'+
+    '<div class="fg"><label>Price / Container</label><input type="number" class="pi-price" step="0.01" placeholder="0.00" oninput="calcPurchItemTotal(this)"/></div>'+
+    '<div class="fg"><label>Line Total</label><input type="text" class="pi-line-total" readonly style="background:var(--bg);font-weight:700;"/></div>'+
+    '</div>'+
+    '<div class="pi-summary" style="font-size:12px;color:var(--leaf);margin-bottom:4px;"></div>';
   document.getElementById('purch-items').appendChild(div);
   if(prefill){
     div.querySelector('.pi-name').value = prefill.name||'';
+    if(prefill.category) div.querySelector('.pi-cat').value = prefill.category;
     div.querySelector('.pi-qty').value = prefill.qty||'';
+    if(prefill.container) div.querySelector('.pi-container').value = prefill.container;
+    div.querySelector('.pi-size').value = prefill.containerSize||prefill.size||'';
     div.querySelector('.pi-unit').value = prefill.unit||'L';
-    div.querySelector('.pi-price').value = prefill.unitPrice||'';
+    div.querySelector('.pi-price').value = prefill.unitPrice||prefill.price||'';
+    calcPurchItemTotal(div.querySelector('.pi-qty'));
   }
 }
 
+function calcPurchItemTotal(input){
+  var row = input.closest('div[id^="pi-"]');
+  if(!row) return;
+  var qty = parseFloat(row.querySelector('.pi-qty').value)||0;
+  var size = parseFloat(row.querySelector('.pi-size').value)||0;
+  var price = parseFloat(row.querySelector('.pi-price').value)||0;
+  var unit = row.querySelector('.pi-unit').value;
+  var container = row.querySelector('.pi-container').value;
+  var lineTotal = qty*price;
+  var totalSize = qty*size;
+  var ltEl = row.querySelector('.pi-line-total');
+  var sumEl = row.querySelector('.pi-summary');
+  if(ltEl) ltEl.value = lineTotal>0 ? lineTotal.toFixed(2) : '';
+  if(sumEl && qty&&size&&price) sumEl.textContent = qty+' '+container+'(s) × '+size+' '+unit+' = '+totalSize.toFixed(1)+' '+unit+' total · '+price.toFixed(2)+'/'+container;
+  else if(sumEl) sumEl.textContent='';
+  calcPurchTotal();
+}
 function calcPurchTotal(){
-  var rows = document.querySelectorAll('#purch-items > div');
+  var rows = document.querySelectorAll('#purch-items > div[id^="pi-"]');
   var total = 0;
   rows.forEach(function(r){
     var qty = parseFloat(r.querySelector('.pi-qty').value)||0;
@@ -2015,12 +2048,23 @@ function calcPurchTotal(){
 function addPurchase(){
   var date=g('purch-date'), supplier=g('purch-supplier');
   if(!date||!supplier){ alert('Enter date and supplier name.'); return; }
-  var rows = document.querySelectorAll('#purch-items > div');
+  var rows = document.querySelectorAll('#purch-items > div[id^="pi-"]');
   var items = [];
   rows.forEach(function(r){
     var name = r.querySelector('.pi-name').value.trim();
     if(!name) return;
-    items.push({ name:name, qty:r.querySelector('.pi-qty').value, unit:r.querySelector('.pi-unit').value, unitPrice:r.querySelector('.pi-price').value });
+    var qty = parseFloat(r.querySelector('.pi-qty').value)||0;
+    var size = parseFloat(r.querySelector('.pi-size').value)||0;
+    items.push({
+      name:name,
+      category:r.querySelector('.pi-cat').value,
+      qty:String(qty),
+      container:r.querySelector('.pi-container').value,
+      containerSize:String(size),
+      unit:r.querySelector('.pi-unit').value,
+      unitPrice:r.querySelector('.pi-price').value,
+      lineTotal:String(qty*(parseFloat(r.querySelector('.pi-price').value)||0))
+    });
   });
   var editId = g('purch-edit-id');
   var entry = { date:date, supplier:supplier, ref:g('purch-ref'), currency:g('purch-cur'), total:g('purch-total'), items:items, notes:g('purch-notes') };
@@ -2043,12 +2087,12 @@ function addPurchase(){
       var density = null;
       Object.keys(KNOWN_DENSITIES).forEach(function(k){ if(nameL.indexOf(k)>-1) density=KNOWN_DENSITIES[k]; });
       DB.products.push({
-        id: Date.now()+idx+1, category:'Fertilizer', name:item.name, brand:'',
-        container: (item.unit==='kg'||item.unit==='lb') ? 'bag' : 'bottle',
-        vol:item.qty||'1', unit:item.unit||'L',
+        id: Date.now()+idx+1, category:item.category||'Fertilizer', name:item.name, brand:'',
+        container: item.container||'bottle',
+        vol:item.containerSize||item.qty||'1', unit:item.unit||'L',
         density: density ? String(density) : '',
-        price: item.unitPrice ? String((parseFloat(item.unitPrice)||0)*(parseFloat(item.qty)||1)) : '0',
-        currency:cur, qty:'1'
+        price: item.unitPrice ? String((parseFloat(item.unitPrice)||0)) : '0',
+        currency:cur, qty:item.qty||'1'
       });
       newProds++;
     }
@@ -2158,7 +2202,15 @@ function renderPurchases(){
     html += '<div class="log-meta">📅 '+fmtD(p.date)+(p.notes?' · '+p.notes:'')+'</div>';
     if(p.items&&p.items.length){
       p.items.forEach(function(item){
-        html += '<div style="font-size:12px;margin-top:2px;color:var(--muted);">· '+item.name+(item.qty?' · '+item.qty+' '+item.unit:'')+(item.unitPrice?' · '+fmtCur(item.unitPrice,p.currency)+'/'+item.unit:'')+'</div>';
+        var totalSize = item.containerSize ? parseFloat(item.qty)*parseFloat(item.containerSize) : null;
+        html += '<div style="font-size:12px;margin-top:2px;color:var(--muted);">';
+        html += '· <strong style="color:var(--text);">'+item.name+'</strong>';
+        if(item.category) html += ' <span class="badge bk" style="font-size:10px;">'+item.category+'</span>';
+        if(item.qty) html += ' · '+item.qty+' '+(item.container||'unit')+(parseFloat(item.qty)!==1?'s':'');
+        if(item.containerSize) html += ' × '+item.containerSize+' '+item.unit;
+        if(totalSize) html += ' = '+totalSize.toFixed(1)+' '+item.unit+' total';
+        if(item.unitPrice) html += ' · '+fmtCur(item.unitPrice,p.currency)+'/'+(item.container||'unit');
+        html += '</div>';
       });
     }
     html += '</div><div style="display:flex;gap:6px;flex-shrink:0;"><button class="btn btn-edit btn-sm" onclick="editPurchase(\''+p.id+'\')">✏️</button><button class="log-del" onclick="deletePurchase(\''+p.id+'\')">✕</button></div></div>';
