@@ -585,63 +585,61 @@ function migratePestSprayDosage(){
 }
 function autoPriceBackfill(){
   var changed = 0;
-  // Fertilizer products
+  function calcCost(totalApplied, appliedUnit, prod){
+    if(!totalApplied||!prod) return null;
+    var perUnit = productPricePerUnit(prod);
+    if(!perUnit) return null;
+    var qty = parseFloat(totalApplied);
+    // If units match, use directly
+    if(appliedUnit === prod.unit) return (qty * perUnit).toFixed(2);
+    // Convert kg↔L using density
+    var density = parseFloat(prod.density)||0;
+    if(density){
+      if(appliedUnit==='kg' && prod.unit==='L') return (qty/density * perUnit).toFixed(2);
+      if(appliedUnit==='L' && prod.unit==='kg') return (qty*density * perUnit).toFixed(2);
+    }
+    // Same family units (kg/lb, L/gal) — just use directly as best guess
+    return (qty * perUnit).toFixed(2);
+  }
+  // Fertilizer
   DB.fertilizer.forEach(function(entry){
     (entry.products||[]).forEach(function(p){
-      if(p.cost && parseFloat(p.cost)>0) return; // already has cost
-      var prod = DB.products.find(function(x){ return x.name.toLowerCase()===p.name.toLowerCase(); });
+      if(parseFloat(p.cost)>0) return;
+      var prod = DB.products.find(function(x){ return x.name.toLowerCase().trim()===p.name.toLowerCase().trim(); });
       if(!prod) return;
-      var perUnit = productPricePerUnit(prod);
-      if(!perUnit) return;
-      if(p.totalApplied){
-        p.cost = (p.totalApplied * perUnit).toFixed(2);
-        p.currency = prod.currency;
-        p.unit = 'total';
-        changed++;
-      } else if(p.ratePerHa){
-        var area = getSectionAreaForIds(entry.fid, entry.sid);
-        if(area){
-          p.cost = (p.ratePerHa * area.num * perUnit).toFixed(2);
-          p.currency = prod.currency;
-          p.unit = 'total';
-          changed++;
-        }
-      }
+      var area = getSectionAreaForIds(entry.fid, entry.sid);
+      var totalApplied = p.totalApplied || (p.ratePerHa && area ? p.ratePerHa*area.num : null);
+      var cost = calcCost(totalApplied, p.rateUnit||'kg', prod);
+      if(cost){ p.cost=cost; p.currency=prod.currency; p.unit='total'; changed++; }
     });
   });
   // Pesticide
   DB.pesticide.forEach(function(r){
-    if(r.cost && parseFloat(r.cost)>0) return;
-    var prod = DB.products.find(function(x){ return x.name.toLowerCase()===r.name.toLowerCase(); });
+    if(parseFloat(r.cost)>0) return;
+    var prod = DB.products.find(function(x){ return x.name.toLowerCase().trim()===r.name.toLowerCase().trim(); });
     if(!prod) return;
-    var perUnit = productPricePerUnit(prod);
-    if(!perUnit) return;
-    if(r.totalApplied){
-      r.cost = (r.totalApplied * perUnit).toFixed(2);
-      r.currency = prod.currency;
-      r.unit = 'total';
-      changed++;
-    }
+    var area = getSectionAreaForIds(r.fid, r.sid);
+    var totalApplied = r.totalApplied || (r.ratePerHa && area ? r.ratePerHa*area.num : null);
+    var cost = calcCost(totalApplied, r.rateUnit||'L', prod);
+    if(cost){ r.cost=cost; r.currency=prod.currency; r.unit='total'; changed++; }
   });
-  // Spray chemicals
+  // Spray
   DB.spray.forEach(function(r){
     (r.chemicals||[]).forEach(function(c){
-      if(c.cost && parseFloat(c.cost)>0) return;
-      var prod = DB.products.find(function(x){ return x.name.toLowerCase()===c.name.toLowerCase(); });
+      if(parseFloat(c.cost)>0) return;
+      var prod = DB.products.find(function(x){ return x.name.toLowerCase().trim()===c.name.toLowerCase().trim(); });
       if(!prod) return;
-      var perUnit = productPricePerUnit(prod);
-      if(!perUnit) return;
-      if(c.totalApplied){
-        c.cost = (c.totalApplied * perUnit).toFixed(2);
-        c.currency = prod.currency;
-        c.unit = 'total';
-        changed++;
-      }
+      var area = getSectionAreaForIds(r.fid, r.sid);
+      var totalApplied = c.totalApplied || (c.ratePerHa && area ? c.ratePerHa*area.num : null);
+      var cost = calcCost(totalApplied, c.rateUnit||'L', prod);
+      if(cost){ c.cost=cost; c.currency=prod.currency; c.unit='total'; changed++; }
     });
   });
   if(changed>0){
     save();
-    showToast('✅ Auto-filled '+changed+' missing cost'+(changed!==1?'s':'')+' from product catalog');
+    showToast('✅ Updated '+changed+' cost'+(changed!==1?'s':'')+' from product catalog');
+  } else {
+    showToast('ℹ️ No missing costs — check products have names and prices registered');
   }
   return changed;
 }
@@ -2399,7 +2397,7 @@ function renderDashboard(){
   var html = '';
 
   // ── Year badge ──
-  html += '<div style="text-align:right;font-size:12px;color:var(--muted);margin-bottom:8px;">📅 '+year+' Season'+(fid?' · '+fN(fid):'')+(sid?' · '+sN(fid,sid):'')+'</div>';
+  html += '<div style="text-align:right;font-size:12px;color:var(--muted);margin-bottom:8px;">📅 '+year+' Season'+(fid?' · '+fN(fid):'')+(sid?' · '+sN(fid,sid):'')+' <button class="btn btn-outline btn-sm" style="margin-left:8px;" onclick="autoPriceBackfill();renderDashboard();">🔄 Recalculate Costs</button></div>';
 
   // ── Top 3 big numbers ──
   html += '<div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px;">';
