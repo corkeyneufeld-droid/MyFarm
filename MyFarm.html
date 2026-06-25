@@ -1418,6 +1418,13 @@ function addFert(){
     var name = r.querySelector('.fr-name').value.trim();
     if(!name){ ok=false; return; }
     var prodSel = r.querySelector('.fr-product');
+    var totalAmtEl = r.querySelector('.fr-total-amt');
+    var rateAmtEl = r.querySelector('.fr-rate-amt');
+    var unitEl = r.querySelector('.fr-amt-unit');
+    var area = getSectionArea();
+    var totalApplied = totalAmtEl ? parseFloat(totalAmtEl.value)||null : null;
+    var ratePerHa = rateAmtEl ? parseFloat(rateAmtEl.value)||null : null;
+    var amtUnit = unitEl ? unitEl.value : 'kg';
     products.push({ name:name, brand:r.querySelector('.fr-brand').value.trim(), amount:r.querySelector('.fr-amt').value.trim(), ratePerHa:ratePerHa, totalApplied:totalApplied, rateUnit:amtUnit, areaUnit:area?area.unit:'ha', productId:(prodSel&&prodSel.value)?prodSel.value:null });
   });
   if(!ok){ alert('Each product needs a name.'); return; }
@@ -2341,7 +2348,25 @@ function saveExchRate(){
   var el = document.getElementById('exch-rate');
   var rate = el ? parseFloat(el.value)||0 : 0;
   localStorage.setItem('myfarm_exch_rate', rate);
-  renderPurchases();
+  // Update combined totals without rebuilding the whole page
+  updateCombinedTotals(rate);
+}
+function updateCombinedTotals(rate){
+  var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
+  var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
+  var el = document.getElementById('purch-combined-totals');
+  if(!el) return;
+  if(rate>0 && (totalMXN||totalUSD)){
+    var allMXN = totalMXN + totalUSD*rate;
+    var allUSD = totalUSD + totalMXN/rate;
+    el.innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">'+
+      '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">MX$'+allMXN.toFixed(2)+'</div><div class="stat-lab">All in MXN</div></div>'+
+      '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">$'+allUSD.toFixed(2)+'</div><div class="stat-lab">All in USD</div></div>'+
+      '</div>';
+  } else {
+    el.innerHTML = '<p style="font-size:12px;color:var(--muted);margin-top:6px;">Enter rate above to see combined totals in one currency</p>';
+  }
 }
 function loadExchRate(){
   return parseFloat(localStorage.getItem('myfarm_exch_rate'))||0;
@@ -2368,37 +2393,27 @@ function renderPurchases(){
     DB.products.forEach(function(p){ if(p.name && items.indexOf(p.name)===-1) items.push(p.name); });
     itemsList.innerHTML = items.map(function(s){ return '<option value="'+s+'">'; }).join('');
   }
-  // Stats + exchange rate combined card
   var rate = loadExchRate();
   var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
   var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
   var stats = document.getElementById('purch-stats');
   if(stats){
-    var allInMXN = rate>0 ? totalMXN + totalUSD*rate : null;
-    var allInUSD = rate>0 ? totalUSD + totalMXN/rate : null;
-    var mxnHint = rate>0 ? 'Long-press to see in USD' : 'Set exchange rate to convert';
-    var usdHint = rate>0 ? 'Long-press to see in MXN' : 'Set exchange rate to convert';
     stats.innerHTML =
       '<div class="card" style="border:1.5px solid var(--water);background:var(--waterlight);">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
-      '<h3 style="color:var(--water);">💰 Totals</h3>' +
-      '<div style="display:flex;align-items:center;gap:6px;font-size:12px;">' +
-      '<span style="color:var(--muted);">💱 1 USD =</span>' +
-      '<input type="number" id="exch-rate" step="0.01" placeholder="e.g. 17.50" value="'+(rate||'')+'" style="width:80px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px;" oninput="saveExchRate()"/>' +
-      '<span style="color:var(--muted);">MXN</span>' +
-      '</div></div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">' +
       '<div class="stat" style="cursor:pointer;" ontouchstart="startConvert(this,\''+totalMXN.toFixed(2)+'\',\'MXN\')" ontouchend="endConvert()" onmousedown="startConvert(this,\''+totalMXN.toFixed(2)+'\',\'MXN\')" onmouseup="endConvert()" onmouseleave="endConvert()">' +
-      '<div class="stat-val or" id="stat-mxn">MX$'+totalMXN.toFixed(2)+'</div><div class="stat-lab">Total Spent (MXN)<br><span style="font-size:10px;color:var(--water);">'+mxnHint+'</span></div></div>' +
+      '<div class="stat-val or">MX$'+totalMXN.toFixed(2)+'</div><div class="stat-lab">Total (MXN)<br><span style="font-size:10px;color:var(--water);">Hold to convert</span></div></div>' +
       '<div class="stat" style="cursor:pointer;" ontouchstart="startConvert(this,\''+totalUSD.toFixed(2)+'\',\'USD\')" ontouchend="endConvert()" onmousedown="startConvert(this,\''+totalUSD.toFixed(2)+'\',\'USD\')" onmouseup="endConvert()" onmouseleave="endConvert()">' +
-      '<div class="stat-val or" id="stat-usd">$'+totalUSD.toFixed(2)+'</div><div class="stat-lab">Total Spent (USD)<br><span style="font-size:10px;color:var(--water);">'+usdHint+'</span></div></div>' +
+      '<div class="stat-val or">$'+totalUSD.toFixed(2)+'</div><div class="stat-lab">Total (USD)<br><span style="font-size:10px;color:var(--water);">Hold to convert</span></div></div>' +
       '</div>' +
-      (allInMXN!==null ? '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
-      '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">MX$'+allInMXN.toFixed(2)+'</div><div class="stat-lab">All in MXN</div></div>' +
-      '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">$'+allInUSD.toFixed(2)+'</div><div class="stat-lab">All in USD</div></div>' +
-      '</div>' : '') +
-      '</div>'
-    ;
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+      '<span style="font-size:12px;color:var(--muted);">💱 1 USD =</span>' +
+      '<input type="number" id="exch-rate" step="0.01" placeholder="17.50" value="'+(rate||'')+'" style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;" oninput="saveExchRate()"/>' +
+      '<span style="font-size:12px;color:var(--muted);">MXN</span>' +
+      '</div>' +
+      '<div id="purch-combined-totals"></div>' +
+      '</div>';
+    updateCombinedTotals(rate);
   }
   // Log
   var el = document.getElementById('purch-log'); if(!el) return;
