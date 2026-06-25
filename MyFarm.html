@@ -1936,6 +1936,39 @@ function showProdFilter(cat, btn){
   if(btn) btn.classList.add('active');
   renderProducts();
 }
+function getProductStock(p){
+  // IN: total bought from Purchases page
+  var totalIn = 0;
+  DB.purchases.forEach(function(purch){
+    (purch.items||[]).forEach(function(item){
+      if(!item.name) return;
+      if(item.name.toLowerCase().trim()===p.name.toLowerCase().trim()){
+        var qty = parseFloat(item.totalQty) || (parseFloat(item.qty)||0)*(parseFloat(item.containerSize)||1) || parseFloat(item.qty)||0;
+        totalIn += qty;
+      }
+    });
+  });
+  // OUT: total used from fertilizer, pesticide, spray logs
+  var totalOut = 0;
+  DB.fertilizer.forEach(function(entry){
+    (entry.products||[]).forEach(function(pr){
+      if(pr.name&&pr.name.toLowerCase().trim()===p.name.toLowerCase().trim())
+        totalOut += parseFloat(pr.totalApplied)||0;
+    });
+  });
+  DB.pesticide.forEach(function(r){
+    if(r.name&&r.name.toLowerCase().trim()===p.name.toLowerCase().trim())
+      totalOut += parseFloat(r.totalApplied)||0;
+  });
+  DB.spray.forEach(function(r){
+    (r.chemicals||[]).forEach(function(c){
+      if(c.name&&c.name.toLowerCase().trim()===p.name.toLowerCase().trim())
+        totalOut += parseFloat(c.totalApplied)||0;
+    });
+  });
+  return { totalIn:totalIn, totalOut:totalOut, remaining:totalIn-totalOut };
+}
+
 function renderProducts(){
   var el = document.getElementById('prod-list'); if(!el) return;
   var rows = DB.products.filter(function(p){ return curProdFilter==='all' || p.category===curProdFilter; });
@@ -1945,20 +1978,26 @@ function renderProducts(){
   var html = '';
   sorted.forEach(function(p){
     var perUnit = productPricePerUnit(p);
+    var stock = getProductStock(p);
     html += '<div class="log" style="border-color:var(--straw);background:#FBF7EE;"><div style="flex:1;">';
     html += '<strong>'+p.name+'</strong>'+(p.brand?' — '+p.brand:'')+'<span class="badge '+(catBadge[p.category]||'bk')+'" style="margin-left:5px;">'+p.category+'</span>';
-    html += '<div class="log-meta">'+p.container.charAt(0).toUpperCase()+p.container.slice(1)+' · '+p.vol+' '+priceLabel(p.unit)+' each · '+p.qty+' purchased · '+fmtCur(p.price,p.currency)+' total</div>';
-    html += '<div style="font-size:13px;font-weight:700;color:var(--leaf);margin-top:2px;">'+fmtCur(perUnit,p.currency)+' per '+priceLabel(p.unit)+'</div>';
+    html += '<div class="log-meta">'+p.container.charAt(0).toUpperCase()+p.container.slice(1)+' · '+p.vol+' '+priceLabel(p.unit)+' · '+fmtCur(p.price,p.currency)+' total</div>';
+    if(perUnit) html += '<div style="font-size:13px;font-weight:700;color:var(--leaf);margin-top:2px;">'+fmtCur(perUnit,p.currency)+' per '+priceLabel(p.unit)+'</div>';
     if(p.density && parseFloat(p.density)){
       var d = parseFloat(p.density);
       var totalVol = (parseFloat(p.vol)||0)*(parseFloat(p.qty)||1);
-      if(p.unit==='kg'){
-        var liters = totalVol/d;
-        html += '<div style="font-size:12px;color:var(--water);margin-top:2px;">💧 '+liters.toFixed(1)+' L total · '+fmtCur(parseFloat(p.price)/liters,p.currency)+'/L · density: '+d+' kg/L</div>';
-      } else if(p.unit==='L'){
-        var kgs = totalVol*d;
-        html += '<div style="font-size:12px;color:var(--water);margin-top:2px;">⚖️ '+kgs.toFixed(1)+' kg total · density: '+d+' kg/L</div>';
-      }
+      if(p.unit==='kg') html += '<div style="font-size:12px;color:var(--water);margin-top:2px;">💧 '+(totalVol/d).toFixed(1)+' L total · '+fmtCur(parseFloat(p.price)/(totalVol/d),p.currency)+'/L · density: '+d+' kg/L</div>';
+      else if(p.unit==='L') html += '<div style="font-size:12px;color:var(--water);margin-top:2px;">⚖️ '+(totalVol*d).toFixed(1)+' kg total · density: '+d+' kg/L</div>';
+    }
+    // Stock tracker
+    if(stock.totalIn>0||stock.totalOut>0){
+      var remaining = stock.remaining;
+      var stockColor = remaining>0?'var(--leaf)':remaining<0?'var(--danger)':'var(--muted)';
+      html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:12px;text-align:center;">';
+      html += '<div><div style="font-weight:700;color:var(--water);">'+stock.totalIn.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">📦 In</div></div>';
+      html += '<div><div style="font-weight:700;color:var(--harvest);">'+stock.totalOut.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">⬆️ Used</div></div>';
+      html += '<div><div style="font-weight:700;color:'+stockColor+';">'+(remaining>=0?'+':'')+remaining.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">🏷️ Left</div></div>';
+      html += '</div>';
     }
     html += '</div><div style="display:flex;gap:6px;flex-shrink:0;"><button class="btn btn-edit btn-sm" onclick="editProduct(\''+p.id+'\')">✏️</button><button class="log-del" onclick="deleteProduct(\''+p.id+'\')">✕</button></div></div>';
   });
@@ -2435,8 +2474,34 @@ function renderPurchases(){
       '</div>';
     updateCombinedTotals(rate);
   }
-  // Log
-  var el = document.getElementById('purch-log'); if(!el) return;
+  // Accumulated product totals from all purchases
+  var prodTotals = {};
+  DB.purchases.forEach(function(p){
+    (p.items||[]).forEach(function(item){
+      if(!item.name) return;
+      var key = item.name;
+      if(!prodTotals[key]) prodTotals[key] = { totalQty:0, unit:item.unit||'', currency:p.currency, totalCost:0 };
+      var qty = parseFloat(item.totalQty) || (parseFloat(item.qty)||0)*(parseFloat(item.containerSize)||1) || parseFloat(item.qty)||0;
+      prodTotals[key].totalQty += qty;
+      prodTotals[key].unit = item.unit||prodTotals[key].unit;
+      prodTotals[key].totalCost += parseFloat(item.lineTotal)||0;
+      prodTotals[key].currency = p.currency;
+    });
+  });
+  var prodKeys = Object.keys(prodTotals).sort();
+  if(prodKeys.length){
+    var ptHtml = '<div class="card" style="border:1.5px solid var(--harvest);margin-bottom:12px;">';
+    ptHtml += '<h3 style="color:var(--harvest);margin-bottom:8px;">📦 Total Purchased by Product</h3>';
+    ptHtml += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    ptHtml += '<tr style="border-bottom:2px solid var(--harvest);"><th style="text-align:left;padding:4px;">Product</th><th style="text-align:right;padding:4px;">Total Qty</th><th style="text-align:right;padding:4px;">Total Spent</th></tr>';
+    prodKeys.forEach(function(name){
+      var t = prodTotals[name];
+      ptHtml += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">'+name+'</td><td style="text-align:right;padding:4px;font-weight:700;color:var(--harvest);">'+(t.totalQty?t.totalQty.toFixed(1)+' '+t.unit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+(t.totalCost?fmtCur(t.totalCost,t.currency):'—')+'</td></tr>';
+    });
+    ptHtml += '</table></div>';
+    var logEl = document.getElementById('purch-log');
+    if(logEl) logEl.insertAdjacentHTML('beforebegin', ptHtml);
+  }
   if(!DB.purchases.length){ el.innerHTML='<div class="empty"><div class="empty-icon">🛒</div>No purchases logged yet.</div>'; return; }
   var html='';
   // Sort by date descending, then by ref number descending
@@ -2652,38 +2717,38 @@ function onGsprayFieldChange(){
 function buildGlobalTotalsHtml(rows, getProducts, color, areaUnit){
   var year = new Date().getFullYear().toString();
   var yearRows = rows.filter(function(r){ return r.date&&r.date.startsWith(year); });
-  var allRows = rows;
-  function buildTable(rr, title){
+  function buildTable(rr){
     if(!rr.length) return '';
     var totals = {};
     rr.forEach(function(r){
       getProducts(r).forEach(function(p){
         var key = p.name;
-        if(!totals[key]) totals[key] = { totalApplied:0, unit:p.rateUnit||p.unit||'', appCount:0 };
-        totals[key].appCount++;
+        if(!totals[key]) totals[key] = { totalApplied:0, unit:p.rateUnit||p.unit||'' };
         if(p.totalApplied) totals[key].totalApplied += parseFloat(p.totalApplied)||0;
         if(p.rateUnit||p.unit) totals[key].unit = p.rateUnit||p.unit||'';
       });
     });
-    var keys = Object.keys(totals);
+    var keys = Object.keys(totals).sort();
     if(!keys.length) return '';
-    var html = '<div style="margin-bottom:10px;"><strong style="font-size:12px;color:var(--muted);">'+title+'</strong>';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">';
-    html += '<tr style="border-bottom:1px solid '+color+';"><th style="text-align:left;padding:3px;">Product</th><th style="text-align:right;padding:3px;">Total Applied</th><th style="text-align:right;padding:3px;">Applications</th></tr>';
-    keys.sort().forEach(function(name){
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<tr style="border-bottom:2px solid '+color+';"><th style="text-align:left;padding:4px;">Product</th><th style="text-align:right;padding:4px;">Total Applied</th></tr>';
+    keys.forEach(function(name){
       var t=totals[name];
-      html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:3px;">'+name+'</td><td style="text-align:right;padding:3px;font-weight:600;color:'+color+';">'+(t.totalApplied?t.totalApplied.toFixed(1)+' '+t.unit:'—')+'</td><td style="text-align:right;padding:3px;color:var(--muted);">'+t.appCount+'</td></tr>';
+      html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px 4px;">'+name+'</td><td style="text-align:right;padding:4px;font-weight:700;color:'+color+';">'+(t.totalApplied?t.totalApplied.toFixed(1)+' '+t.unit:'—')+'</td></tr>';
     });
-    html += '</table></div>';
+    html += '</table>';
     return html;
   }
   var html = '<div class="card" style="border:2px solid '+color+';margin-bottom:10px;">';
-  html += '<h3 style="color:'+color+';margin-bottom:8px;">📊 Accumulated Totals</h3>';
-  var t1 = buildTable(yearRows, new Date().getFullYear()+' Season ('+yearRows.length+' applications)');
-  var t2 = buildTable(allRows, 'All Time ('+allRows.length+' applications)');
-  if(!t1&&!t2){ html += '<p style="font-size:12px;color:var(--muted);">No entries yet.</p>'; }
-  if(t1) html += t1;
-  if(allRows.length > yearRows.length) html += t2;
+  html += '<h3 style="color:'+color+';margin-bottom:8px;">📊 '+year+' Season</h3>';
+  var t1 = buildTable(yearRows);
+  if(!t1){ html += '<p style="font-size:12px;color:var(--muted);">No entries this season.</p>'; }
+  else html += t1;
+  if(rows.length > yearRows.length){
+    html += '<details style="margin-top:10px;"><summary style="font-size:12px;color:var(--muted);cursor:pointer;">▶ All Time ('+rows.length+' total)</summary>';
+    html += buildTable(rows)||'';
+    html += '</details>';
+  }
   html += '</div>';
   return html;
 }
