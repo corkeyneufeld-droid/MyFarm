@@ -374,11 +374,6 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   <datalist id="purch-items-list"></datalist>
   <div id="purch-stats"></div>
   <div id="purch-log"></div>
-
-  <h2>Purchase History</h2>
-  <datalist id="purch-items-list"></datalist>
-  <div id="purch-stats" class="stats" style="grid-template-columns:repeat(2,1fr);"></div>
-  <div id="purch-log"></div>
 </div>
 <div id="page-reports" class="page">
   <h1>📄 Reports & Backup</h1>
@@ -2502,6 +2497,7 @@ function renderPurchases(){
     var logEl = document.getElementById('purch-log');
     if(logEl) logEl.insertAdjacentHTML('beforebegin', ptHtml);
   }
+  var el = document.getElementById('purch-log'); if(!el) return;
   if(!DB.purchases.length){ el.innerHTML='<div class="empty"><div class="empty-icon">🛒</div>No purchases logged yet.</div>'; return; }
   var html='';
   // Sort by date descending, then by ref number descending
