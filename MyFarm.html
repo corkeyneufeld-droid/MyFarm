@@ -669,7 +669,9 @@ var CUR_SYM = { USD:'$', MXN:'MX$' };
 function fmtCur(amount, cur){
   amount = parseFloat(amount)||0;
   cur = cur || 'USD';
-  return (CUR_SYM[cur]||'$') + amount.toFixed(2);
+  var formatted = amount.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  if(cur==='MXN') return 'MX$'+formatted;
+  return '$'+formatted+' USD';
 }
 function costLine(amount, cur, unit){
   if(!amount) return '';
@@ -2406,21 +2408,7 @@ function saveExchRate(){
   updateCombinedTotals(rate);
 }
 function updateCombinedTotals(rate){
-  var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
-  var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
-  var el = document.getElementById('purch-combined-totals');
-  if(!el) return;
-  if(rate>0 && (totalMXN||totalUSD)){
-    var allMXN = totalMXN + totalUSD*rate;
-    var allUSD = totalUSD + totalMXN/rate;
-    el.innerHTML =
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">'+
-      '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">MX$'+allMXN.toFixed(2)+'</div><div class="stat-lab">All in MXN</div></div>'+
-      '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">$'+allUSD.toFixed(2)+'</div><div class="stat-lab">All in USD</div></div>'+
-      '</div>';
-  } else {
-    el.innerHTML = '<p style="font-size:12px;color:var(--muted);margin-top:6px;">Enter rate above to see combined totals in one currency</p>';
-  }
+  // Now handled inline in renderPurchases — no separate div needed
 }
 function loadExchRate(){
   return parseFloat(localStorage.getItem('myfarm_exch_rate'))||0;
@@ -2452,20 +2440,26 @@ function renderPurchases(){
   var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
   var stats = document.getElementById('purch-stats');
   if(stats){
+    var allInMXN = rate>0 ? totalMXN + totalUSD*rate : null;
+    var allInUSD = rate>0 ? totalUSD + totalMXN/rate : null;
     stats.innerHTML =
       '<div class="card" style="border:1.5px solid var(--water);background:var(--waterlight);">' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">' +
-      '<div class="stat" style="cursor:pointer;" ontouchstart="startConvert(this,\''+totalMXN.toFixed(2)+'\',\'MXN\')" ontouchend="endConvert()" onmousedown="startConvert(this,\''+totalMXN.toFixed(2)+'\',\'MXN\')" onmouseup="endConvert()" onmouseleave="endConvert()">' +
-      '<div class="stat-val or">MX$'+totalMXN.toFixed(2)+'</div><div class="stat-lab">Total (MXN)<br><span style="font-size:10px;color:var(--water);">Hold to convert</span></div></div>' +
-      '<div class="stat" style="cursor:pointer;" ontouchstart="startConvert(this,\''+totalUSD.toFixed(2)+'\',\'USD\')" ontouchend="endConvert()" onmousedown="startConvert(this,\''+totalUSD.toFixed(2)+'\',\'USD\')" onmouseup="endConvert()" onmouseleave="endConvert()">' +
-      '<div class="stat-val or">$'+totalUSD.toFixed(2)+'</div><div class="stat-lab">Total (USD)<br><span style="font-size:10px;color:var(--water);">Hold to convert</span></div></div>' +
+      '<div class="stat"><div class="stat-val or" style="font-size:18px;">'+fmtCur(totalMXN,'MXN')+'</div><div class="stat-lab">Total Spent (MXN)</div></div>' +
+      '<div class="stat"><div class="stat-val or" style="font-size:18px;">'+fmtCur(totalUSD,'USD')+'</div><div class="stat-lab">Total Spent (USD)</div></div>' +
       '</div>' +
-      '<div style="display:flex;align-items:center;gap:8px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:'+(allInMXN!==null?'10px':'0')+'">' +
       '<span style="font-size:12px;color:var(--muted);">💱 1 USD =</span>' +
       '<input type="number" id="exch-rate" step="0.01" placeholder="17.50" value="'+(rate||'')+'" style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;" oninput="saveExchRate()"/>' +
       '<span style="font-size:12px;color:var(--muted);">MXN</span>' +
       '</div>' +
-      '<div id="purch-combined-totals"></div>' +
+      (allInMXN!==null ?
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:10px;border-top:1px solid var(--border);">' +
+        '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:16px;">'+fmtCur(allInMXN,'MXN')+'</div><div class="stat-lab">All in MXN</div></div>' +
+        '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:16px;">'+fmtCur(allInUSD,'USD')+'</div><div class="stat-lab">All in USD</div></div>' +
+        '</div>' :
+        '<div style="font-size:12px;color:var(--muted);">Enter rate above to see combined totals</div>'
+      ) +
       '</div>';
     updateCombinedTotals(rate);
   }
@@ -2596,8 +2590,11 @@ function renderPestSummary(fid, sid){
     var key = r.name;
     if(!totals[key]) totals[key] = { rateTotal:0, totalApplied:0, unit:r.rateUnit||'L', appCount:0, costTotal:0, currency:r.currency||'USD', type:r.type||'' };
     totals[key].appCount++;
-    if(r.ratePerHa) totals[key].rateTotal += parseFloat(r.ratePerHa)||0;
-    if(r.totalApplied) totals[key].totalApplied += parseFloat(r.totalApplied)||0;
+    var pnorm = normalizeToBaseUnit(parseFloat(r.totalApplied)||0, r.rateUnit||'L');
+    var pnormR = normalizeToBaseUnit(parseFloat(r.ratePerHa)||0, r.rateUnit||'L');
+    totals[key].rateTotal += pnormR.qty;
+    totals[key].totalApplied += pnorm.qty;
+    if(pnorm.unit) totals[key].unit = pnorm.unit;
     if(r.cost) totals[key].costTotal += parseFloat(r.cost)||0;
   });
   var area = getSectionArea();
@@ -2607,7 +2604,7 @@ function renderPestSummary(fid, sid){
   html += '<table style="width:100%;border-collapse:collapse;font-size:12px;"><tr style="border-bottom:2px solid var(--purple);"><th style="text-align:left;padding:4px;">Product</th><th style="text-align:right;padding:4px;">Rate/'+areaUnit+'</th><th style="text-align:right;padding:4px;">Total</th><th style="text-align:right;padding:4px;">Cost</th></tr>';
   Object.keys(totals).sort().forEach(function(name){
     var t=totals[name];
-    html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">'+name+(t.type?' <span class="badge bp" style="font-size:10px;">'+t.type+'</span>':'')+'</td><td style="text-align:right;padding:4px;color:var(--purple);font-weight:600;">'+(t.rateTotal?t.rateTotal.toFixed(2)+' '+t.unit+'/'+areaUnit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+(t.totalApplied?t.totalApplied.toFixed(2)+' '+t.unit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--danger);font-weight:600;">'+(t.costTotal>0?fmtCur(t.costTotal,t.currency):'—')+'</td></tr>';
+    html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">'+name+(t.type?' <span class="badge bp" style="font-size:10px;">'+t.type+'</span>':'')+'</td><td style="text-align:right;padding:4px;color:var(--purple);font-weight:600;">'+(t.rateTotal?fmtQty(t.rateTotal,t.unit)+'/'+areaUnit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+(t.totalApplied?fmtQty(t.totalApplied,t.unit):'—')+'</td><td style="text-align:right;padding:4px;color:var(--danger);font-weight:600;">'+(t.costTotal>0?fmtCur(t.costTotal,t.currency):'—')+'</td></tr>';
   });
   html += '</table></div>';
   el.innerHTML = html;
@@ -2624,8 +2621,11 @@ function renderSpraySummary(fid, sid){
       var key = c.name;
       if(!totals[key]) totals[key] = { rateTotal:0, totalApplied:0, unit:c.rateUnit||'L', appCount:0, costTotal:0, currency:c.currency||'USD' };
       totals[key].appCount++;
-      if(c.ratePerHa) totals[key].rateTotal += parseFloat(c.ratePerHa)||0;
-      if(c.totalApplied) totals[key].totalApplied += parseFloat(c.totalApplied)||0;
+      var snorm = normalizeToBaseUnit(parseFloat(c.totalApplied)||0, c.rateUnit||'L');
+      var snormR = normalizeToBaseUnit(parseFloat(c.ratePerHa)||0, c.rateUnit||'L');
+      totals[key].rateTotal += snormR.qty;
+      totals[key].totalApplied += snorm.qty;
+      if(snorm.unit) totals[key].unit = snorm.unit;
       if(c.cost) totals[key].costTotal += parseFloat(c.cost)||0;
     });
   });
@@ -2636,7 +2636,7 @@ function renderSpraySummary(fid, sid){
   html += '<table style="width:100%;border-collapse:collapse;font-size:12px;"><tr style="border-bottom:2px solid var(--harvest);"><th style="text-align:left;padding:4px;">Product</th><th style="text-align:right;padding:4px;">Rate/'+areaUnit+'</th><th style="text-align:right;padding:4px;">Total</th><th style="text-align:right;padding:4px;">Cost</th></tr>';
   Object.keys(totals).sort().forEach(function(name){
     var t=totals[name];
-    html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">'+name+'</td><td style="text-align:right;padding:4px;color:var(--harvest);font-weight:600;">'+(t.rateTotal?t.rateTotal.toFixed(2)+' '+t.unit+'/'+areaUnit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+(t.totalApplied?t.totalApplied.toFixed(2)+' '+t.unit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--danger);font-weight:600;">'+(t.costTotal>0?fmtCur(t.costTotal,t.currency):'—')+'</td></tr>';
+    html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">'+name+'</td><td style="text-align:right;padding:4px;color:var(--harvest);font-weight:600;">'+(t.rateTotal?fmtQty(t.rateTotal,t.unit)+'/'+areaUnit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+(t.totalApplied?fmtQty(t.totalApplied,t.unit):'—')+'</td><td style="text-align:right;padding:4px;color:var(--danger);font-weight:600;">'+(t.costTotal>0?fmtCur(t.costTotal,t.currency):'—')+'</td></tr>';
   });
   html += '</table></div>';
   el.innerHTML = html;
@@ -2656,11 +2656,13 @@ function renderFertSummary(fid, sid){
   entries.forEach(function(entry){
     (entry.products||[]).forEach(function(p){
       var key = p.name;
-      if(!totals[key]) totals[key] = { rateTotal:0, totalApplied:0, unit:p.rateUnit||'', appCount:0 };
+      var norm = normalizeToBaseUnit(parseFloat(p.totalApplied)||0, p.rateUnit||'');
+      var normRate = normalizeToBaseUnit(parseFloat(p.ratePerHa)||0, p.rateUnit||'');
+      if(!totals[key]) totals[key] = { rateTotal:0, totalApplied:0, unit:norm.unit, appCount:0 };
       totals[key].appCount++;
-      if(p.ratePerHa) totals[key].rateTotal += parseFloat(p.ratePerHa)||0;
-      if(p.totalApplied) totals[key].totalApplied += parseFloat(p.totalApplied)||0;
-      if(p.rateUnit) totals[key].unit = p.rateUnit;
+      totals[key].rateTotal += normRate.qty;
+      totals[key].totalApplied += norm.qty;
+      if(norm.unit) totals[key].unit = norm.unit;
     });
   });
   var keys = Object.keys(totals);
@@ -2672,7 +2674,7 @@ function renderFertSummary(fid, sid){
   html += '<tr style="border-bottom:2px solid var(--leaf);"><th style="text-align:left;padding:4px;">Product</th><th style="text-align:right;padding:4px;">Rate/'+areaUnit+'</th><th style="text-align:right;padding:4px;">Total Applied</th><th style="text-align:right;padding:4px;">Apps</th></tr>';
   keys.sort().forEach(function(name){
     var t = totals[name];
-    html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">'+name+'</td><td style="text-align:right;padding:4px;color:var(--leaf);font-weight:700;">'+(t.rateTotal?t.rateTotal.toFixed(1)+' '+t.unit+'/'+areaUnit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+(t.totalApplied?t.totalApplied.toFixed(1)+' '+t.unit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+t.appCount+'</td></tr>';
+    html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">'+name+'</td><td style="text-align:right;padding:4px;color:var(--leaf);font-weight:700;">'+(t.rateTotal?fmtQty(t.rateTotal,t.unit)+'/'+areaUnit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+(t.totalApplied?fmtQty(t.totalApplied,t.unit):'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+t.appCount+'</td></tr>';
   });
   html += '</table></div>';
   el.innerHTML = html;
@@ -2710,6 +2712,36 @@ function onGsprayFieldChange(){
   renderGlobalLog('spray','g-spray-log');
 }
 
+function normalizeToBaseUnit(qty, unit){
+  // Returns {qty, unit} normalized to a sensible base
+  if(!qty) return {qty:0, unit:unit};
+  switch((unit||'').toLowerCase()){
+    case 'ml': case 'milliliter': case 'millilitre':
+      return {qty:qty/1000, unit:'L'};
+    case 'cc':
+      return {qty:qty/1000, unit:'L'};
+    case 'g':
+      return {qty:qty/1000, unit:'kg'};
+    case 'oz':
+      return {qty:qty*0.02957, unit:'L'};
+    case 'fl oz':
+      return {qty:qty*0.02957, unit:'L'};
+    case 'lb': case 'lbs':
+      return {qty:qty*0.4536, unit:'kg'};
+    case 'gal':
+      return {qty:qty*3.785, unit:'L'};
+    default:
+      return {qty:qty, unit:unit||''};
+  }
+}
+function fmtQty(qty, unit){
+  // Display with sensible decimal places
+  if(qty===0) return '0 '+unit;
+  if(qty < 0.1) return qty.toFixed(3)+' '+unit;
+  if(qty < 10) return qty.toFixed(2)+' '+unit;
+  return qty.toFixed(1)+' '+unit;
+}
+
 function buildGlobalTotalsHtml(rows, getProducts, color, areaUnit){
   var year = new Date().getFullYear().toString();
   var yearRows = rows.filter(function(r){ return r.date&&r.date.startsWith(year); });
@@ -2719,9 +2751,18 @@ function buildGlobalTotalsHtml(rows, getProducts, color, areaUnit){
     rr.forEach(function(r){
       getProducts(r).forEach(function(p){
         var key = p.name;
-        if(!totals[key]) totals[key] = { totalApplied:0, unit:p.rateUnit||p.unit||'' };
-        if(p.totalApplied) totals[key].totalApplied += parseFloat(p.totalApplied)||0;
-        if(p.rateUnit||p.unit) totals[key].unit = p.rateUnit||p.unit||'';
+        var rawQty = parseFloat(p.totalApplied)||0;
+        var rawUnit = p.rateUnit||p.unit||'';
+        var norm = normalizeToBaseUnit(rawQty, rawUnit);
+        if(!totals[key]) totals[key] = { totalApplied:0, unit:norm.unit };
+        // If existing unit differs from norm unit, try to keep consistent
+        if(totals[key].unit !== norm.unit && norm.qty>0){
+          // Re-normalize existing to same base
+          var existing = normalizeToBaseUnit(totals[key].totalApplied, totals[key].unit);
+          totals[key].totalApplied = existing.qty;
+          totals[key].unit = norm.unit;
+        }
+        totals[key].totalApplied += norm.qty;
       });
     });
     var keys = Object.keys(totals).sort();
@@ -2730,7 +2771,7 @@ function buildGlobalTotalsHtml(rows, getProducts, color, areaUnit){
     html += '<tr style="border-bottom:2px solid '+color+';"><th style="text-align:left;padding:4px;">Product</th><th style="text-align:right;padding:4px;">Total Applied</th></tr>';
     keys.forEach(function(name){
       var t=totals[name];
-      html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px 4px;">'+name+'</td><td style="text-align:right;padding:4px;font-weight:700;color:'+color+';">'+(t.totalApplied?t.totalApplied.toFixed(1)+' '+t.unit:'—')+'</td></tr>';
+      html += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px 4px;">'+name+'</td><td style="text-align:right;padding:4px;font-weight:700;color:'+color+';">'+(t.totalApplied?fmtQty(t.totalApplied,t.unit):'—')+'</td></tr>';
     });
     html += '</table>';
     return html;
