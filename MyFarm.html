@@ -3008,24 +3008,47 @@ function renderGlobalLog(type, elId){
 }
 function renderGlobal(id){
   if(id==='irrigation'){
-    var byField = {};
-    DB.irrigation.forEach(function(r){
-      var key = String(r.fid);
-      if(!byField[key]) byField[key] = 0;
-      byField[key] += r.hours;
-    });
-    var fieldIds = Object.keys(byField);
-    var s=document.getElementById('g-irr-stats');
+    var s = document.getElementById('g-irr-stats');
     if(s){
-      if(!fieldIds.length){
-        s.innerHTML = '<div class="empty"><div class="empty-icon">💧</div>No irrigation logged yet.</div>';
+      if(!DB.fields.length){
+        s.innerHTML = '<div class="empty"><div class="empty-icon">💧</div>No fields yet.</div>';
       } else {
-        var sortedFieldIds = fieldIds.slice().sort(function(a,b){ return fN(a).localeCompare(fN(b), undefined, {sensitivity:'base'}); });
-        var html = '<div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));">';
-        sortedFieldIds.forEach(function(fid){
-          html += '<div class="stat"><div class="stat-val bl">'+byField[fid].toFixed(1)+'</div><div class="stat-lab">'+fN(fid)+'</div></div>';
+        var html = '<div class="card" style="border:2px solid var(--water);background:var(--waterlight);margin-bottom:12px;">';
+        html += '<h3 style="color:var(--water);margin-bottom:10px;">⚡ Electric Cost per Irrigation Hour — by Field</h3>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+        html += '<tr style="border-bottom:2px solid var(--water);"><th style="text-align:left;padding:4px;">Field</th><th style="text-align:right;padding:4px;">Total Bills</th><th style="text-align:right;padding:4px;">Irr. Hours</th><th style="text-align:right;padding:4px;">Cost/Hour</th></tr>';
+        var sorted = smartSort(DB.fields);
+        sorted.forEach(function(f){
+          // Total electric bills for this field
+          var billsMXN = DB.electric.filter(function(e){ return String(e.fid)===String(f.id) && e.currency==='MXN'; }).reduce(function(s,e){ return s+(parseFloat(e.amount)||0); },0);
+          var billsUSD = DB.electric.filter(function(e){ return String(e.fid)===String(f.id) && e.currency!=='MXN'; }).reduce(function(s,e){ return s+(parseFloat(e.amount)||0); },0);
+          var billCount = DB.electric.filter(function(e){ return String(e.fid)===String(f.id); }).length;
+          // Total irrigation hours for this field
+          var totalHrs = DB.irrigation.filter(function(r){ return String(r.fid)===String(f.id); }).reduce(function(s,r){ return s+r.hours; },0);
+          // Cost per hour (use whichever currency has bills)
+          var costPerHr = '';
+          var billsDisplay = '';
+          if(billsMXN>0 && totalHrs>0){
+            costPerHr = fmtCur(billsMXN/totalHrs,'MXN')+'/hr';
+            billsDisplay = fmtCur(billsMXN,'MXN');
+          } else if(billsUSD>0 && totalHrs>0){
+            costPerHr = fmtCur(billsUSD/totalHrs,'USD')+'/hr';
+            billsDisplay = fmtCur(billsUSD,'USD');
+          } else if(billsMXN>0||billsUSD>0){
+            billsDisplay = billsMXN>0 ? fmtCur(billsMXN,'MXN') : fmtCur(billsUSD,'USD');
+            costPerHr = '<span style="color:var(--muted);">No hrs logged</span>';
+          } else {
+            billsDisplay = '<span style="color:var(--muted);">—</span>';
+            costPerHr = '<span style="color:var(--muted);">—</span>';
+          }
+          html += '<tr style="border-bottom:1px solid var(--border);">';
+          html += '<td style="padding:5px 4px;font-weight:600;">'+f.name+'<div style="font-size:11px;color:var(--muted);">'+billCount+' bill'+(billCount!==1?'s':'')+'</div></td>';
+          html += '<td style="text-align:right;padding:5px 4px;">'+billsDisplay+'</td>';
+          html += '<td style="text-align:right;padding:5px 4px;color:var(--water);font-weight:700;">'+(totalHrs?totalHrs.toFixed(1)+' hrs':'<span style="color:var(--muted);">—</span>')+'</td>';
+          html += '<td style="text-align:right;padding:5px 4px;color:var(--danger);font-weight:700;">'+costPerHr+'</td>';
+          html += '</tr>';
         });
-        html += '</div>';
+        html += '</table></div>';
         s.innerHTML = html;
       }
     }
