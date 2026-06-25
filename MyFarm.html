@@ -1012,8 +1012,28 @@ function openSection(fid, sid){
   curField = f; curSection = s;
   document.getElementById('section-bc').innerHTML =
     '<div class="bc"><span onclick="goHome()">Fields</span><span class="sep">›</span><span onclick="openField(\''+f.id+'\')">'+f.name+'</span><span class="sep">›</span><span class="cur">'+s.name+'</span></div>';
+
+  // Build prev/next section navigation
+  var sorted = smartSort(f.sections);
+  var idx = sorted.findIndex(function(x){ return String(x.id)===String(sid); });
+  var prev = idx>0 ? sorted[idx-1] : null;
+  var next = idx<sorted.length-1 ? sorted[idx+1] : null;
+  var prevBtn = prev ? '<button onclick="openSection(\''+f.id+'\',\''+prev.id+'\')" style="background:rgba(255,255,255,0.15);border:none;color:#fff;font-size:20px;padding:6px 12px;border-radius:8px;cursor:pointer;line-height:1;">‹</button>' : '<div style="width:44px;"></div>';
+  var nextBtn = next ? '<button onclick="openSection(\''+f.id+'\',\''+next.id+'\')" style="background:rgba(255,255,255,0.15);border:none;color:#fff;font-size:20px;padding:6px 12px;border-radius:8px;cursor:pointer;line-height:1;">›</button>' : '<div style="width:44px;"></div>';
+  var counter = '<span style="font-size:11px;color:var(--straw);opacity:0.8;">'+(idx+1)+' / '+sorted.length+'</span>';
+
   document.getElementById('section-hero-wrap').innerHTML =
-    '<div class="hero"><h1>'+(s.type==='pivot'?'🌀 ':'')+s.name+'</h1><div class="meta">'+f.name+(s.type==='pivot'?' · Center Pivot':'')+(s.crop?' · 🌱 '+s.crop:'')+(s.area?' · '+s.area:'')+'</div>'+(s.detail?'<div style="font-size:12px;color:var(--straw);margin-top:3px;">'+s.detail+'</div>':'')+'</div>';
+    '<div class="hero" style="display:flex;align-items:center;gap:8px;">'+
+    prevBtn+
+    '<div style="flex:1;text-align:center;">'+
+    '<h1 style="margin:0;">'+(s.type==='pivot'?'🌀 ':'')+s.name+'</h1>'+
+    '<div class="meta">'+f.name+(s.type==='pivot'?' · Center Pivot':'')+(s.crop?' · 🌱 '+s.crop:'')+(s.area?' · '+s.area:'')+'</div>'+
+    (s.detail?'<div style="font-size:12px;color:var(--straw);margin-top:2px;">'+s.detail+'</div>':'')+
+    '<div style="margin-top:4px;">'+counter+'</div>'+
+    '</div>'+
+    nextBtn+
+    '</div>';
+
   document.querySelectorAll('.mod-tab').forEach(function(t,i){ t.classList.toggle('active',i===0); });
   showMod('irrigation', document.querySelector('.mod-tab'));
   showPage('section-detail');
