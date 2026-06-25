@@ -196,7 +196,7 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 <div id="page-fertilizer" class="page">
   <h1>🌿 Fertilizer — All Fields</h1>
   <div class="form-row" style="margin-bottom:8px;">
-    <div class="fg"><label>Field</label><select id="gfert-field" onchange="gfertPopulateSections();renderGlobalFertTotals()"><option value="">All Fields</option></select></div>
+    <div class="fg"><label>Field</label><select id="gfert-field" onchange="onGfertFieldChange()"><option value="">All Fields</option></select></div>
     <div class="fg"><label>Section</label><select id="gfert-section" onchange="renderGlobalFertTotals()"><option value="">All Sections</option></select></div>
   </div>
   <div id="gfert-totals"></div>
@@ -210,7 +210,7 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 <div id="page-pesticide" class="page">
   <h1>🛡️ Pesticide — All Fields</h1>
   <div class="form-row" style="margin-bottom:8px;">
-    <div class="fg"><label>Field</label><select id="gpest-field" onchange="gpestPopulateSections();renderGlobalPestTotals()"><option value="">All Fields</option></select></div>
+    <div class="fg"><label>Field</label><select id="gpest-field" onchange="onGpestFieldChange()"><option value="">All Fields</option></select></div>
     <div class="fg"><label>Section</label><select id="gpest-section" onchange="renderGlobalPestTotals()"><option value="">All Sections</option></select></div>
   </div>
   <div id="gpest-totals"></div>
@@ -219,7 +219,7 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 <div id="page-spray" class="page">
   <h1>🧪 Spray — All Fields</h1>
   <div class="form-row" style="margin-bottom:8px;">
-    <div class="fg"><label>Field</label><select id="gspray-field" onchange="gsprayPopulateSections();renderGlobalSprayTotals()"><option value="">All Fields</option></select></div>
+    <div class="fg"><label>Field</label><select id="gspray-field" onchange="onGsprayFieldChange()"><option value="">All Fields</option></select></div>
     <div class="fg"><label>Section</label><select id="gspray-section" onchange="renderGlobalSprayTotals()"><option value="">All Sections</option></select></div>
   </div>
   <div id="gspray-totals"></div>
@@ -2633,6 +2633,22 @@ function gfertPopulateSections(){ gPopulateSections('gfert-field','gfert-section
 function gpestPopulateSections(){ gPopulateSections('gpest-field','gpest-section'); }
 function gsprayPopulateSections(){ gPopulateSections('gspray-field','gspray-section'); }
 
+function onGfertFieldChange(){
+  gfertPopulateSections();
+  renderGlobalFertTotals();
+  renderFertLog(null,null,'g-fert-log',true);
+}
+function onGpestFieldChange(){
+  gpestPopulateSections();
+  renderGlobalPestTotals();
+  renderGlobalLog('pesticide','g-pest-log');
+}
+function onGsprayFieldChange(){
+  gsprayPopulateSections();
+  renderGlobalSprayTotals();
+  renderGlobalLog('spray','g-spray-log');
+}
+
 function buildGlobalTotalsHtml(rows, getProducts, color, areaUnit){
   var year = new Date().getFullYear().toString();
   var yearRows = rows.filter(function(r){ return r.date&&r.date.startsWith(year); });
@@ -2674,7 +2690,6 @@ function buildGlobalTotalsHtml(rows, getProducts, color, areaUnit){
 
 function renderGlobalFertTotals(){
   var el = document.getElementById('gfert-totals'); if(!el) return;
-  gPopulateFieldSelect('gfert-field');
   var fid = document.getElementById('gfert-field') ? document.getElementById('gfert-field').value : '';
   var sid = document.getElementById('gfert-section') ? document.getElementById('gfert-section').value : '';
   var rows = DB.fertilizer.filter(function(r){
@@ -2684,7 +2699,6 @@ function renderGlobalFertTotals(){
 }
 function renderGlobalPestTotals(){
   var el = document.getElementById('gpest-totals'); if(!el) return;
-  gPopulateFieldSelect('gpest-field');
   var fid = document.getElementById('gpest-field') ? document.getElementById('gpest-field').value : '';
   var sid = document.getElementById('gpest-section') ? document.getElementById('gpest-section').value : '';
   var rows = DB.pesticide.filter(function(r){
@@ -2694,7 +2708,6 @@ function renderGlobalPestTotals(){
 }
 function renderGlobalSprayTotals(){
   var el = document.getElementById('gspray-totals'); if(!el) return;
-  gPopulateFieldSelect('gspray-field');
   var fid = document.getElementById('gspray-field') ? document.getElementById('gspray-field').value : '';
   var sid = document.getElementById('gspray-section') ? document.getElementById('gspray-section').value : '';
   var rows = DB.spray.filter(function(r){
@@ -2918,14 +2931,25 @@ function renderGlobal(id){
     renderElectric();
   }
   if(id==='fertilizer'){
-    renderGlobalFertTotals();
+    gPopulateFieldSelect('gfert-field');
     gfertPopulateSections();
+    renderGlobalFertTotals();
     curFertView = 'all';
     document.querySelectorAll('#fert-view-tabs .mod-tab').forEach(function(t,i){ t.classList.toggle('active', i===0); });
     renderFertLog(null,null,'g-fert-log',true);
   }
-  if(id==='pesticide'){ renderGlobalPestTotals(); gpestPopulateSections(); renderGlobalLog('pesticide','g-pest-log'); }
-  if(id==='spray'){ renderGlobalSprayTotals(); gsprayPopulateSections(); renderGlobalLog('spray','g-spray-log'); }
+  if(id==='pesticide'){
+    gPopulateFieldSelect('gpest-field');
+    gpestPopulateSections();
+    renderGlobalPestTotals();
+    renderGlobalLog('pesticide','g-pest-log');
+  }
+  if(id==='spray'){
+    gPopulateFieldSelect('gspray-field');
+    gsprayPopulateSections();
+    renderGlobalSprayTotals();
+    renderGlobalLog('spray','g-spray-log');
+  }
   if(id==='harvest'){
     var v=DB.harvest.reduce(function(a,r){ return a+(parseFloat(r.value)||0); },0).toFixed(2);
     var s=document.getElementById('g-harv-stats');
