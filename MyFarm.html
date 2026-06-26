@@ -2504,11 +2504,44 @@ function renderPurchases(){
   sorted.forEach(function(p){
     var grandTotal = parseFloat(p.grandTotal||p.total)||0;
     var tax = parseFloat(p.tax)||0;
-    html += '<div class="log" style="border-color:var(--harvest);background:var(--harvestlight);">';
-    html += '<div style="flex:1;"><strong>'+(p.supplier||'')+'</strong>'+(p.ref?' <span class="badge bk">Ref# '+p.ref+'</span>':'');
+
+    // Interest calculation — 15% annually, starts day 61
+    var ANNUAL_RATE = 0.15;
+    var DAILY_RATE = ANNUAL_RATE / 365;
+    var GRACE_DAYS = 60;
+    var today = new Date();
+    var purchDate = p.date ? new Date(p.date+'T00:00:00') : null;
+    var daysSince = purchDate ? Math.floor((today - purchDate) / 86400000) : 0;
+    var daysOverdue = Math.max(0, daysSince - GRACE_DAYS);
+    var interestAmt = daysOverdue > 0 ? grandTotal * DAILY_RATE * daysOverdue : 0;
+    var totalWithInterest = grandTotal + interestAmt;
+    var isOverdue = daysOverdue > 0;
+
+    // Orange border if overdue/carrying interest
+    var cardStyle = isOverdue
+      ? 'border-color:#E67E22;background:#FEF5E7;border-width:2px;'
+      : 'border-color:var(--harvest);background:var(--harvestlight);';
+
+    html += '<div class="log" style="'+cardStyle+'">';
+    html += '<div style="flex:1;">';
+    html += '<strong>'+(p.supplier||'')+'</strong>'+(p.ref?' <span class="badge bk">Ref# '+p.ref+'</span>':'');
     html += '<span class="badge bo" style="margin-left:5px;">'+fmtCur(grandTotal,p.currency)+'</span>';
     if(tax>0) html += '<span class="badge bk" style="margin-left:4px;">Tax: '+fmtCur(tax,p.currency)+'</span>';
-    html += '<div class="log-meta">📅 '+fmtD(p.date)+(p.notes?' · '+p.notes:'')+'</div>';
+
+    // Interest badge
+    if(isOverdue){
+      html += '<div style="margin-top:5px;padding:5px 8px;background:#E67E22;border-radius:6px;display:inline-block;">';
+      html += '<span style="color:#fff;font-size:12px;font-weight:700;">⚠️ '+daysOverdue+' days overdue · Interest: '+fmtCur(interestAmt,p.currency)+'</span><br>';
+      html += '<span style="color:#fff;font-size:12px;">Total with interest: '+fmtCur(totalWithInterest,p.currency)+' (15% p.a.)</span>';
+      html += '</div>';
+    } else if(daysSince >= 45){
+      // Warning when approaching 60-day threshold
+      var daysLeft = GRACE_DAYS - daysSince;
+      html += '<span class="badge" style="background:#FEF9C3;color:#92400E;margin-left:4px;font-size:11px;">⏳ Interest starts in '+daysLeft+' days</span>';
+    }
+
+    html += '<div class="log-meta">📅 '+fmtD(p.date)+' · '+daysSince+' days ago'+(p.notes?' · '+p.notes:'')+'</div>';
+
     if(p.items&&p.items.length){
       p.items.forEach(function(item){
         var totalSize = item.containerSize ? parseFloat(item.qty)*parseFloat(item.containerSize) : null;
