@@ -338,8 +338,9 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   <div class="mod-tabs" id="purch-tabs">
     <button class="mod-tab active" onclick="showPurchTab('log',this)">➕ Log</button>
     <button class="mod-tab" onclick="showPurchTab('receipts',this)">🧾 Receipts</button>
-    <button class="mod-tab" onclick="showPurchTab('products',this)">📦 By Product</button>
+    <button class="mod-tab" onclick="showPurchTab('byproduct',this)">📦 By Product</button>
     <button class="mod-tab" onclick="showPurchTab('totals',this)">💰 Totals</button>
+    <button class="mod-tab" onclick="showPurchTab('products',this)">🏷️ Products</button>
   </div>
 
   <!-- LOG TAB -->
@@ -386,13 +387,19 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   </div>
 
   <!-- BY PRODUCT TAB -->
-  <div id="purch-tab-products" style="display:none;">
+  <div id="purch-tab-byproduct" style="display:none;">
     <div id="purch-by-product"></div>
   </div>
 
   <!-- TOTALS TAB -->
   <div id="purch-tab-totals" style="display:none;">
     <div id="purch-stats"></div>
+  </div>
+
+  <!-- PRODUCTS TAB -->
+  <div id="purch-tab-products" style="display:none;">
+    <div id="purch-prod-form"></div>
+    <div id="purch-prod-list"></div>
   </div>
 </div>
 <div id="page-reports" class="page">
@@ -762,7 +769,7 @@ function renderFields(){
     var now = new Date();
     var sectionStatuses = f.sections.map(function(s){
       var rows = DB.irrigation.filter(function(r){ return String(r.fid)===String(f.id)&&String(r.sid)===String(s.id); });
-      var active = rows.some(function(r){ return now>=new Date(r.start)&&now<=new Date(r.end); });
+      var active = rows.some(function(r){ return now>=parseLocalDate(r.start)&&now<=parseLocalDate(r.end); });
       if(active) return 'active';
       if(!rows.length) return 'none';
       var lastEnd = rows.reduce(function(l,r){ return (!l||new Date(r.end)>new Date(l))?r.end:l; }, null);
@@ -903,12 +910,23 @@ function isIrrigatingNow(fid, sid){
     return now>=start && now<=end;
   });
 }
+function parseLocalDate(str){
+  // Parse date string in local time to avoid UTC offset shifting the date
+  if(!str) return null;
+  if(str.length===10) return new Date(str+'T00:00:00'); // date only e.g. 2026-05-04
+  return new Date(str); // datetime already has time component
+}
 function daysSinceIrrigation(fid, sid){
   var rows = DB.irrigation.filter(function(r){ return String(r.fid)===String(fid)&&String(r.sid)===String(sid); });
   if(!rows.length) return null;
-  var lastEnd = rows.reduce(function(latest,r){ return (!latest || new Date(r.end)>new Date(latest)) ? r.end : latest; }, null);
+  var lastEnd = rows.reduce(function(latest,r){ return (!latest || parseLocalDate(r.end)>parseLocalDate(latest)) ? r.end : latest; }, null);
   if(!lastEnd) return null;
-  var diffMs = new Date() - new Date(lastEnd);
+  // Compare calendar days, not raw ms, to avoid timezone issues
+  var now = new Date();
+  var endDate = parseLocalDate(lastEnd);
+  var nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var endMidnight = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+  var diffMs = nowMidnight - endMidnight;
   return Math.max(0, Math.floor(diffMs/86400000));
 }
 function renderSections(){
@@ -2308,7 +2326,6 @@ function addPurchase(){
   document.getElementById('purch-btn').textContent='🛒 Save Purchase';
   purchItems=[];
   renderPurchases();
-  // Switch to receipts tab to show what was just saved
   showPurchTab('receipts', document.querySelector('#purch-tabs .mod-tab:nth-child(2)'));
 }
 
@@ -2426,25 +2443,107 @@ function endConvert(){
 function saveExchRate(){
   var el = document.getElementById('exch-rate');
   var rate = el ? parseFloat(el.value)||0 : 0;
-  localStorage.setItem('myfarm_exch_rate', rate);
-  // Update combined totals without rebuilding the whole page
+  if(rate>0) localStorage.setItem('myfarm_exch_rate', rate);
   updateCombinedTotals(rate);
-}
-function updateCombinedTotals(rate){
-  // Now handled inline in renderPurchases — no separate div needed
 }
 function loadExchRate(){
   return parseFloat(localStorage.getItem('myfarm_exch_rate'))||0;
 }
+function updateCombinedTotals(rate){
+  rate = rate || loadExchRate();
+  var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
+  var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
+  // Update the stats tab content if visible
+  var stats = document.getElementById('purch-stats');
+  if(!stats) return;
+  var allInMXN = rate>0 ? totalMXN + totalUSD*rate : null;
+  var allInUSD = rate>0 ? totalUSD + totalMXN/rate : null;
+  stats.innerHTML =
+    '<div class="card" style="border:1.5px solid var(--water);background:var(--waterlight);">' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">' +
+    '<div class="stat"><div class="stat-val or" style="font-size:18px;">'+fmtCur(totalMXN,'MXN')+'</div><div class="stat-lab">Total Spent (MXN)</div></div>' +
+    '<div class="stat"><div class="stat-val or" style="font-size:18px;">'+fmtCur(totalUSD,'USD')+'</div><div class="stat-lab">Total Spent (USD)</div></div>' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:'+(allInMXN!==null?'10px':'4px')+'">' +
+    '<span style="font-size:12px;color:var(--muted);">💱 1 USD =</span>' +
+    '<input type="number" id="exch-rate" step="0.01" placeholder="17.50" value="'+(rate||'')+'" style="width:90px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;" oninput="saveExchRate()"/>' +
+    '<span style="font-size:12px;color:var(--muted);">MXN</span>' +
+    '</div>' +
+    (allInMXN!==null ?
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:10px;border-top:1px solid var(--border);">' +
+      '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">'+fmtCur(allInMXN,'MXN')+'</div><div class="stat-lab">All in MXN</div></div>' +
+      '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">'+fmtCur(allInUSD,'USD')+'</div><div class="stat-lab">All in USD</div></div>' +
+      '</div>' :
+      '<div style="font-size:12px;color:var(--muted);">Enter rate above to see combined totals</div>'
+    ) +
+    '</div>';
+}
 function updateExchSummary(){}
 function showPurchTab(tab, btn){
-  ['log','receipts','products','totals'].forEach(function(t){
+  ['log','receipts','byproduct','totals','products'].forEach(function(t){
     var el = document.getElementById('purch-tab-'+t);
     if(el) el.style.display = t===tab ? '' : 'none';
   });
   document.querySelectorAll('#purch-tabs .mod-tab').forEach(function(t){ t.classList.remove('active'); });
   if(btn) btn.classList.add('active');
+  if(tab==='totals') updateCombinedTotals();
+  if(tab==='products') renderProductsInPurchases();
 }
+function renderProductsInPurchases(){
+  // Render the add product form and product list inside purchases tab
+  var formEl = document.getElementById('purch-prod-form');
+  var listEl = document.getElementById('purch-prod-list');
+  if(!formEl||!listEl) return;
+  // Reuse the products page by cloning its content approach — just call renderProducts targeting new IDs
+  // For simplicity, show a link-style button to go to Products nav tab, and show the stock list
+  var html = '<div class="card" style="border:1.5px solid var(--straw);">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
+  html += '<h3>🏷️ Products Catalog</h3>';
+  html += '<button class="btn btn-outline btn-sm" onclick="showGlobal(\'products\',null)">Open Full Page ›</button>';
+  html += '</div>';
+  // Category filter
+  html += '<div class="mod-tabs" id="purch-prod-filter" style="margin-bottom:8px;">';
+  ['all','Fertilizer','Insecticide','Herbicide','Fungicide','Other'].forEach(function(cat,i){
+    html += '<button class="mod-tab'+(i===0?' active':'')+'" onclick="filterPurchProds(\''+cat+'\',this)">'+cat.charAt(0).toUpperCase()+cat.slice(1)+'</button>';
+  });
+  html += '</div>';
+  html += '</div>';
+  formEl.innerHTML = html;
+  filterPurchProds('all', null);
+}
+var curPurchProdFilter = 'all';
+function filterPurchProds(cat, btn){
+  curPurchProdFilter = cat;
+  if(btn){
+    document.querySelectorAll('#purch-prod-filter .mod-tab').forEach(function(t){ t.classList.remove('active'); });
+    btn.classList.add('active');
+  }
+  var listEl = document.getElementById('purch-prod-list');
+  if(!listEl) return;
+  var rows = DB.products.filter(function(p){ return cat==='all' || p.category===cat; });
+  rows.sort(function(a,b){ return a.name.localeCompare(b.name); });
+  if(!rows.length){ listEl.innerHTML='<div class="empty"><div class="empty-icon">🏷️</div>No products yet. <button class="btn btn-outline btn-sm" onclick="showGlobal(\'products\',null)">Add Products ›</button></div>'; return; }
+  var catBadge = { Fertilizer:'bg', Insecticide:'bp', Herbicide:'bp', Fungicide:'bp', Other:'bk' };
+  var html = '';
+  rows.forEach(function(p){
+    var perUnit = productPricePerUnit(p);
+    var stock = getProductStock(p);
+    html += '<div class="log" style="border-color:var(--straw);background:#FBF7EE;"><div style="flex:1;">';
+    html += '<strong>'+p.name+'</strong>'+(p.brand?' — '+p.brand:'')+'<span class="badge '+(catBadge[p.category]||'bk')+'" style="margin-left:5px;">'+p.category+'</span>';
+    if(perUnit) html += '<div style="font-size:12px;color:var(--leaf);font-weight:700;margin-top:2px;">'+fmtCur(perUnit,p.currency)+'/'+priceLabel(p.unit)+'</div>';
+    if(stock.totalIn>0||stock.totalOut>0){
+      var rem = stock.remaining;
+      html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:11px;text-align:center;margin-top:5px;padding-top:5px;border-top:1px solid var(--border);">';
+      html += '<div><div style="font-weight:700;color:var(--water);">'+stock.totalIn.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">In</div></div>';
+      html += '<div><div style="font-weight:700;color:var(--harvest);">'+stock.totalOut.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">Used</div></div>';
+      html += '<div><div style="font-weight:700;color:'+(rem>=0?'var(--leaf)':'var(--danger)')+';">'+(rem>=0?'+':'')+rem.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">Left</div></div>';
+      html += '</div>';
+    }
+    html += '</div><button class="btn btn-edit btn-sm" onclick="showGlobal(\'products\',null);editProduct(\''+p.id+'\')">✏️</button></div>';
+  });
+  listEl.innerHTML = html;
+}
+
 function renderPurchases(){
   loadExchRate();
   var btn = document.getElementById('purch-btn');
@@ -2467,33 +2566,7 @@ function renderPurchases(){
     itemsList.innerHTML = items.map(function(s){ return '<option value="'+s+'">'; }).join('');
   }
   var rate = loadExchRate();
-  var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
-  var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
-  var stats = document.getElementById('purch-stats');
-  if(stats){
-    var allInMXN = rate>0 ? totalMXN + totalUSD*rate : null;
-    var allInUSD = rate>0 ? totalUSD + totalMXN/rate : null;
-    stats.innerHTML =
-      '<div class="card" style="border:1.5px solid var(--water);background:var(--waterlight);">' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">' +
-      '<div class="stat"><div class="stat-val or" style="font-size:18px;">'+fmtCur(totalMXN,'MXN')+'</div><div class="stat-lab">Total Spent (MXN)</div></div>' +
-      '<div class="stat"><div class="stat-val or" style="font-size:18px;">'+fmtCur(totalUSD,'USD')+'</div><div class="stat-lab">Total Spent (USD)</div></div>' +
-      '</div>' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:'+(allInMXN!==null?'10px':'0')+'">' +
-      '<span style="font-size:12px;color:var(--muted);">💱 1 USD =</span>' +
-      '<input type="number" id="exch-rate" step="0.01" placeholder="17.50" value="'+(rate||'')+'" style="width:80px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;" oninput="saveExchRate()"/>' +
-      '<span style="font-size:12px;color:var(--muted);">MXN</span>' +
-      '</div>' +
-      (allInMXN!==null ?
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:10px;border-top:1px solid var(--border);">' +
-        '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:16px;">'+fmtCur(allInMXN,'MXN')+'</div><div class="stat-lab">All in MXN</div></div>' +
-        '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:16px;">'+fmtCur(allInUSD,'USD')+'</div><div class="stat-lab">All in USD</div></div>' +
-        '</div>' :
-        '<div style="font-size:12px;color:var(--muted);">Enter rate above to see combined totals</div>'
-      ) +
-      '</div>';
-    updateCombinedTotals(rate);
-  }
+  updateCombinedTotals(rate);
   // Accumulated product totals from all purchases
   var prodTotals = {};
   DB.purchases.forEach(function(p){
@@ -2546,7 +2619,9 @@ function renderPurchases(){
     var GRACE_DAYS = 60;
     var today = new Date();
     var purchDate = p.date ? new Date(p.date+'T00:00:00') : null;
-    var daysSince = purchDate ? Math.floor((today - purchDate) / 86400000) : 0;
+    var todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    var purchMidnight = purchDate ? new Date(purchDate.getFullYear(), purchDate.getMonth(), purchDate.getDate()) : null;
+    var daysSince = purchMidnight ? Math.floor((todayMidnight - purchMidnight) / 86400000) : 0;
     var daysOverdue = Math.max(0, daysSince - GRACE_DAYS);
     var interestAmt = daysOverdue > 0 ? grandTotal * DAILY_RATE * daysOverdue : 0;
     var totalWithInterest = grandTotal + interestAmt;
