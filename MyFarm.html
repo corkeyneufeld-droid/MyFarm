@@ -132,8 +132,7 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
     <button class="nav-tab" onclick="showGlobal('spray',this)">🧪 Spray</button>
     <button class="nav-tab" onclick="showGlobal('harvest',this)">🌽 Harvest</button>
     <button class="nav-tab" onclick="showGlobal('labour',this)">👷 Labour</button>
-    <button class="nav-tab" onclick="showGlobal('products',this)">🏷️ Products</button>
-    <button class="nav-tab" onclick="showGlobal('purchases',this)">🛒 Purchases</button>
+    <button class="nav-tab" onclick="showGlobal('purchases',this)">🧾 Expenses</button>
     <button class="nav-tab" onclick="showGlobal('reports',this)">📄 Reports</button>
   </div>
 </nav>
@@ -294,7 +293,8 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   <h2>History</h2><div id="lab-log"></div>
 </div>
 <div id="page-products" class="page">
-  <h1>🏷️ Products</h1><p class="sub">Register what you buy so applications can calculate cost automatically.</p>
+  <h1>🏷️ Product Inventory</h1><p class="sub">Register your products and track stock in/out automatically.</p>
+  <button class="btn btn-outline btn-sm" style="margin-bottom:10px;" onclick="showGlobal('purchases',null)">‹ Back to Expenses</button>
   <div class="card">
     <h2 id="prod-form-title">Add Product</h2>
     <input type="hidden" id="prod-edit-id"/>
@@ -334,7 +334,7 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   <div id="prod-list"></div>
 </div>
 <div id="page-purchases" class="page">
-  <h1>🛒 Purchases</h1>
+  <h1>🧾 Expenses</h1>
   <div class="mod-tabs" id="purch-tabs">
     <button class="mod-tab active" onclick="showPurchTab('log',this)">➕ Log</button>
     <button class="mod-tab" onclick="showPurchTab('receipts',this)">🧾 Receipts</button>
