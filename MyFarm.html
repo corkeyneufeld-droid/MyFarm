@@ -334,46 +334,66 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   <div id="prod-list"></div>
 </div>
 <div id="page-purchases" class="page">
-  <h1>🛒 Purchases</h1><p class="sub">Log what you buy throughout the year.</p>
-
-  <div class="card">
-    <h2 id="purch-form-title">Log Purchase</h2>
-    <input type="hidden" id="purch-edit-id"/>
-    <div class="form-row">
-      <div class="fg"><label>Date *</label><input type="date" id="purch-date"/></div>
-      <div class="fg" style="flex:2"><label>Supplier / Store *</label>
-        <input type="text" id="purch-supplier" placeholder="e.g. Campos Agrícolas Unidos" list="purch-supplier-list" autocomplete="off"/>
-        <datalist id="purch-supplier-list"></datalist>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="fg"><label>Receipt #</label><input type="text" id="purch-ref" placeholder="e.g. 162405"/></div>
-      <div class="fg"><label>Currency</label><select id="purch-cur"><option value="MXN">MXN $</option><option value="USD">USD $</option></select></div>
-    </div>
-    <hr class="divider"/>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <h3>Items Purchased</h3>
-      <button class="btn btn-outline btn-sm" onclick="addPurchItem()">+ Add Item</button>
-    </div>
-    <div id="purch-items"></div>
-    <div id="purch-items-empty" style="font-size:12px;color:var(--muted);padding:4px 0 10px;">No items added yet.</div>
-    <hr class="divider"/>
-    <div class="form-row">
-      <div class="fg"><label>Subtotal</label><input type="number" id="purch-total" step="0.01" placeholder="0.00"/></div>
-      <div class="fg"><label>Tax / IVA</label><input type="number" id="purch-tax" step="0.01" placeholder="0.00" oninput="calcPurchGrandTotal()"/></div>
-      <div class="fg"><label>Tax %</label><input type="number" id="purch-tax-pct" step="0.1" placeholder="e.g. 16" oninput="calcPurchTaxFromPct()"/></div>
-    </div>
-    <div class="form-row">
-      <div class="fg"><label>Grand Total</label><input type="text" id="purch-grand-total" readonly style="background:var(--bg);font-weight:700;font-size:15px;"/></div>
-      <div class="fg" style="flex:2"><label>Notes</label><input type="text" id="purch-notes" placeholder="optional"/></div>
-    </div>
-    <button class="btn btn-green" id="purch-btn">🛒 Save Purchase</button>
+  <h1>🛒 Purchases</h1>
+  <div class="mod-tabs" id="purch-tabs">
+    <button class="mod-tab active" onclick="showPurchTab('log',this)">➕ Log</button>
+    <button class="mod-tab" onclick="showPurchTab('receipts',this)">🧾 Receipts</button>
+    <button class="mod-tab" onclick="showPurchTab('products',this)">📦 By Product</button>
+    <button class="mod-tab" onclick="showPurchTab('totals',this)">💰 Totals</button>
   </div>
 
-  <h2>Purchase History</h2>
-  <datalist id="purch-items-list"></datalist>
-  <div id="purch-stats"></div>
-  <div id="purch-log"></div>
+  <!-- LOG TAB -->
+  <div id="purch-tab-log">
+    <div class="card">
+      <h2 id="purch-form-title">Log Purchase</h2>
+      <input type="hidden" id="purch-edit-id"/>
+      <div class="form-row">
+        <div class="fg"><label>Date *</label><input type="date" id="purch-date"/></div>
+        <div class="fg" style="flex:2"><label>Supplier / Store *</label>
+          <input type="text" id="purch-supplier" placeholder="e.g. Campos Agrícolas Unidos" list="purch-supplier-list" autocomplete="off"/>
+          <datalist id="purch-supplier-list"></datalist>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="fg"><label>Receipt #</label><input type="text" id="purch-ref" placeholder="e.g. 162405"/></div>
+        <div class="fg"><label>Currency</label><select id="purch-cur"><option value="MXN">MXN $</option><option value="USD">USD $</option></select></div>
+      </div>
+      <hr class="divider"/>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <h3>Items Purchased</h3>
+        <button class="btn btn-outline btn-sm" onclick="addPurchItem()">+ Add Item</button>
+      </div>
+      <div id="purch-items"></div>
+      <div id="purch-items-empty" style="font-size:12px;color:var(--muted);padding:4px 0 10px;">No items added yet.</div>
+      <hr class="divider"/>
+      <div class="form-row">
+        <div class="fg"><label>Subtotal</label><input type="number" id="purch-total" step="0.01" placeholder="0.00"/></div>
+        <div class="fg"><label>Tax / IVA</label><input type="number" id="purch-tax" step="0.01" placeholder="0.00" oninput="calcPurchGrandTotal()"/></div>
+        <div class="fg"><label>Tax %</label><input type="number" id="purch-tax-pct" step="0.1" placeholder="e.g. 16" oninput="calcPurchTaxFromPct()"/></div>
+      </div>
+      <div class="form-row">
+        <div class="fg"><label>Grand Total</label><input type="text" id="purch-grand-total" readonly style="background:var(--bg);font-weight:700;font-size:15px;"/></div>
+        <div class="fg" style="flex:2"><label>Notes</label><input type="text" id="purch-notes" placeholder="optional"/></div>
+      </div>
+      <button class="btn btn-green" id="purch-btn">🛒 Save Purchase</button>
+    </div>
+  </div>
+
+  <!-- RECEIPTS TAB -->
+  <div id="purch-tab-receipts" style="display:none;">
+    <datalist id="purch-items-list"></datalist>
+    <div id="purch-log"></div>
+  </div>
+
+  <!-- BY PRODUCT TAB -->
+  <div id="purch-tab-products" style="display:none;">
+    <div id="purch-by-product"></div>
+  </div>
+
+  <!-- TOTALS TAB -->
+  <div id="purch-tab-totals" style="display:none;">
+    <div id="purch-stats"></div>
+  </div>
 </div>
 <div id="page-reports" class="page">
   <h1>📄 Reports & Backup</h1>
@@ -2288,6 +2308,8 @@ function addPurchase(){
   document.getElementById('purch-btn').textContent='🛒 Save Purchase';
   purchItems=[];
   renderPurchases();
+  // Switch to receipts tab to show what was just saved
+  showPurchTab('receipts', document.querySelector('#purch-tabs .mod-tab:nth-child(2)'));
 }
 
 async function scanPurchaseReceipt(input){
@@ -2343,6 +2365,7 @@ function editPurchase(id){
   (p.items||[]).forEach(function(item){ addPurchItem(item); });
   document.getElementById('purch-form-title').textContent='Edit Purchase';
   document.getElementById('purch-btn').textContent='💾 Update Purchase';
+  showPurchTab('log', document.querySelector('#purch-tabs .mod-tab:nth-child(1)'));
   document.getElementById('purch-form-title').scrollIntoView({behavior:'smooth',block:'center'});
 }
 
@@ -2414,6 +2437,14 @@ function loadExchRate(){
   return parseFloat(localStorage.getItem('myfarm_exch_rate'))||0;
 }
 function updateExchSummary(){}
+function showPurchTab(tab, btn){
+  ['log','receipts','products','totals'].forEach(function(t){
+    var el = document.getElementById('purch-tab-'+t);
+    if(el) el.style.display = t===tab ? '' : 'none';
+  });
+  document.querySelectorAll('#purch-tabs .mod-tab').forEach(function(t){ t.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+}
 function renderPurchases(){
   loadExchRate();
   var btn = document.getElementById('purch-btn');
@@ -2478,18 +2509,22 @@ function renderPurchases(){
     });
   });
   var prodKeys = Object.keys(prodTotals).sort();
-  if(prodKeys.length){
-    var ptHtml = '<div class="card" style="border:1.5px solid var(--harvest);margin-bottom:12px;">';
-    ptHtml += '<h3 style="color:var(--harvest);margin-bottom:8px;">📦 Total Purchased by Product</h3>';
-    ptHtml += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    ptHtml += '<tr style="border-bottom:2px solid var(--harvest);"><th style="text-align:left;padding:4px;">Product</th><th style="text-align:right;padding:4px;">Total Qty</th><th style="text-align:right;padding:4px;">Total Spent</th></tr>';
-    prodKeys.forEach(function(name){
-      var t = prodTotals[name];
-      ptHtml += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">'+name+'</td><td style="text-align:right;padding:4px;font-weight:700;color:var(--harvest);">'+(t.totalQty?t.totalQty.toFixed(1)+' '+t.unit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+(t.totalCost?fmtCur(t.totalCost,t.currency):'—')+'</td></tr>';
-    });
-    ptHtml += '</table></div>';
-    var logEl = document.getElementById('purch-log');
-    if(logEl) logEl.insertAdjacentHTML('beforebegin', ptHtml);
+  var byProdEl = document.getElementById('purch-by-product');
+  if(byProdEl){
+    if(prodKeys.length){
+      var ptHtml = '<div class="card" style="border:1.5px solid var(--harvest);">';
+      ptHtml += '<h3 style="color:var(--harvest);margin-bottom:8px;">📦 Total Purchased by Product</h3>';
+      ptHtml += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      ptHtml += '<tr style="border-bottom:2px solid var(--harvest);"><th style="text-align:left;padding:4px;">Product</th><th style="text-align:right;padding:4px;">Total Qty</th><th style="text-align:right;padding:4px;">Total Spent</th></tr>';
+      prodKeys.forEach(function(name){
+        var t = prodTotals[name];
+        ptHtml += '<tr style="border-bottom:1px solid var(--border);"><td style="padding:4px;">'+name+'</td><td style="text-align:right;padding:4px;font-weight:700;color:var(--harvest);">'+(t.totalQty?t.totalQty.toFixed(1)+' '+t.unit:'—')+'</td><td style="text-align:right;padding:4px;color:var(--muted);">'+(t.totalCost?fmtCur(t.totalCost,t.currency):'—')+'</td></tr>';
+      });
+      ptHtml += '</table></div>';
+      byProdEl.innerHTML = ptHtml;
+    } else {
+      byProdEl.innerHTML = '<div class="empty"><div class="empty-icon">📦</div>No purchases logged yet.</div>';
+    }
   }
   var el = document.getElementById('purch-log'); if(!el) return;
   if(!DB.purchases.length){ el.innerHTML='<div class="empty"><div class="empty-icon">🛒</div>No purchases logged yet.</div>'; return; }
