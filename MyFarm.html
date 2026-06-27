@@ -2453,13 +2453,36 @@ function updateCombinedTotals(rate){
   rate = rate || loadExchRate();
   var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
   var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
-  // Update the stats tab content if visible
-  var stats = document.getElementById('purch-stats');
-  if(!stats) return;
+
+  // Calculate total accumulated interest across all overdue purchases
+  var DAILY_RATE = 0.15/365;
+  var GRACE_DAYS = 60;
+  var today = new Date();
+  var todayMid = new Date(today.getFullYear(),today.getMonth(),today.getDate());
+  var interestMXN = 0, interestUSD = 0, overdueCount = 0;
+  DB.purchases.forEach(function(p){
+    var grandTotal = parseFloat(p.grandTotal||p.total)||0;
+    if(!grandTotal||!p.date) return;
+    var pd = new Date(p.date+'T00:00:00');
+    var pdMid = new Date(pd.getFullYear(),pd.getMonth(),pd.getDate());
+    var days = Math.floor((todayMid-pdMid)/86400000);
+    var daysOver = Math.max(0, days-GRACE_DAYS);
+    if(daysOver>0){
+      var interest = grandTotal*DAILY_RATE*daysOver;
+      if(p.currency==='MXN') interestMXN+=interest;
+      else interestUSD+=interest;
+      overdueCount++;
+    }
+  });
+  var totalInterestMXN = interestMXN;
+  var totalInterestUSD = interestUSD;
+
   var allInMXN = rate>0 ? totalMXN + totalUSD*rate : null;
   var allInUSD = rate>0 ? totalUSD + totalMXN/rate : null;
+  var stats = document.getElementById('purch-stats');
+  if(!stats) return;
   stats.innerHTML =
-    '<div class="card" style="border:1.5px solid var(--water);background:var(--waterlight);">' +
+    '<div class="card" style="border:1.5px solid var(--water);background:var(--waterlight);margin-bottom:10px;">' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">' +
     '<div class="stat"><div class="stat-val or" style="font-size:18px;">'+fmtCur(totalMXN,'MXN')+'</div><div class="stat-lab">Total Spent (MXN)</div></div>' +
     '<div class="stat"><div class="stat-val or" style="font-size:18px;">'+fmtCur(totalUSD,'USD')+'</div><div class="stat-lab">Total Spent (USD)</div></div>' +
@@ -2475,6 +2498,21 @@ function updateCombinedTotals(rate){
       '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:15px;">'+fmtCur(allInUSD,'USD')+'</div><div class="stat-lab">All in USD</div></div>' +
       '</div>' :
       '<div style="font-size:12px;color:var(--muted);">Enter rate above to see combined totals</div>'
+    ) +
+    '</div>' +
+    // Interest card
+    '<div class="card" style="border:2px solid var(--danger);">' +
+    '<h3 style="color:var(--danger);margin-bottom:8px;">⚠️ Accumulated Interest</h3>' +
+    '<p style="font-size:12px;color:var(--muted);margin-bottom:10px;">15% p.a. · accruing daily after 60-day grace period · '+overdueCount+' receipt'+(overdueCount!==1?'s':'')+' overdue</p>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+    '<div class="stat"><div class="stat-val" style="color:var(--danger);font-size:18px;">'+fmtCur(totalInterestMXN,'MXN')+'</div><div class="stat-lab">Interest (MXN)</div></div>' +
+    '<div class="stat"><div class="stat-val" style="color:var(--danger);font-size:18px;">'+fmtCur(totalInterestUSD,'USD')+'</div><div class="stat-lab">Interest (USD)</div></div>' +
+    '</div>' +
+    (overdueCount>0 && (totalInterestMXN+totalInterestUSD)>0 ?
+      '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+      '<div class="stat"><div class="stat-val" style="color:var(--danger);font-size:15px;">'+fmtCur(totalMXN+totalInterestMXN,'MXN')+'</div><div class="stat-lab">MXN Total + Interest</div></div>' +
+      '<div class="stat"><div class="stat-val" style="color:var(--danger);font-size:15px;">'+fmtCur(totalUSD+totalInterestUSD,'USD')+'</div><div class="stat-lab">USD Total + Interest</div></div>' +
+      '</div>' : ''
     ) +
     '</div>';
 }
