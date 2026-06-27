@@ -507,6 +507,17 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   </div>
 </div>
 
+<!-- PRODUCT USAGE MODAL -->
+<div class="modal-bg" id="prod-usage-modal">
+  <div class="modal" style="max-height:80vh;overflow-y:auto;">
+    <h2 id="prod-usage-title">Product Usage</h2>
+    <div id="prod-usage-content"></div>
+    <div style="text-align:right;margin-top:12px;">
+      <button class="btn btn-outline" onclick="closeModal('prod-usage-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- COPY APPLICATION MODAL (fertilizer / spray) -->
 <div class="modal-bg" id="copy-modal">
   <div class="modal">
@@ -2000,38 +2011,81 @@ function showProdFilter(cat, btn){
   renderProducts();
 }
 function getProductStock(p){
-  // IN: total bought from Purchases page
+  var prodUnit = p.unit||'L';
+
+  // IN: total bought from Purchases
   var totalIn = 0;
   DB.purchases.forEach(function(purch){
     (purch.items||[]).forEach(function(item){
       if(!item.name) return;
-      if(item.name.toLowerCase().trim()===p.name.toLowerCase().trim()){
-        var qty = parseFloat(item.totalQty) || (parseFloat(item.qty)||0)*(parseFloat(item.containerSize)||1) || parseFloat(item.qty)||0;
-        totalIn += qty;
-      }
+      if(item.name.toLowerCase().trim()!==p.name.toLowerCase().trim()) return;
+      var qty = parseFloat(item.totalQty)||(parseFloat(item.qty)||0)*(parseFloat(item.containerSize)||1)||parseFloat(item.qty)||0;
+      var norm = normalizeToBaseUnit(qty, item.unit||prodUnit);
+      // Convert to product's unit if possible
+      if(norm.unit===prodUnit) totalIn += norm.qty;
+      else totalIn += norm.qty; // best effort
     });
   });
-  // OUT: total used from fertilizer, pesticide, spray logs
+
+  // OUT: total used, with unit normalization, and collect usage log
   var totalOut = 0;
+  var usageLog = [];
+
   DB.fertilizer.forEach(function(entry){
     (entry.products||[]).forEach(function(pr){
-      if(pr.name&&pr.name.toLowerCase().trim()===p.name.toLowerCase().trim())
-        totalOut += parseFloat(pr.totalApplied)||0;
+      if(!pr.name||pr.name.toLowerCase().trim()!==p.name.toLowerCase().trim()) return;
+      var norm = normalizeToBaseUnit(parseFloat(pr.totalApplied)||0, pr.rateUnit||prodUnit);
+      totalOut += norm.qty;
+      usageLog.push({ date:entry.date, field:fN(entry.fid), section:sN(entry.fid,entry.sid), qty:norm.qty, unit:norm.unit, type:'Fertilizer' });
     });
   });
   DB.pesticide.forEach(function(r){
-    if(r.name&&r.name.toLowerCase().trim()===p.name.toLowerCase().trim())
-      totalOut += parseFloat(r.totalApplied)||0;
+    if(!r.name||r.name.toLowerCase().trim()!==p.name.toLowerCase().trim()) return;
+    var norm = normalizeToBaseUnit(parseFloat(r.totalApplied)||0, r.rateUnit||prodUnit);
+    totalOut += norm.qty;
+    usageLog.push({ date:r.date, field:fN(r.fid), section:sN(r.fid,r.sid), qty:norm.qty, unit:norm.unit, type:'Pesticide' });
   });
   DB.spray.forEach(function(r){
     (r.chemicals||[]).forEach(function(c){
-      if(c.name&&c.name.toLowerCase().trim()===p.name.toLowerCase().trim())
-        totalOut += parseFloat(c.totalApplied)||0;
+      if(!c.name||c.name.toLowerCase().trim()!==p.name.toLowerCase().trim()) return;
+      var norm = normalizeToBaseUnit(parseFloat(c.totalApplied)||0, c.rateUnit||prodUnit);
+      totalOut += norm.qty;
+      usageLog.push({ date:r.date, field:fN(r.fid), section:sN(r.fid,r.sid), qty:norm.qty, unit:norm.unit, type:'Spray'+(r.method?' · '+r.method:'') });
     });
   });
-  return { totalIn:totalIn, totalOut:totalOut, remaining:totalIn-totalOut };
+
+  usageLog.sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
+  return { totalIn:totalIn, totalOut:totalOut, remaining:totalIn-totalOut, unit:prodUnit, usageLog:usageLog };
 }
 
+function showProductUsage(pid){
+  var p = DB.products.find(function(x){ return String(x.id)===String(pid); });
+  if(!p) return;
+  var stock = getProductStock(p);
+  document.getElementById('prod-usage-title').textContent = p.name+' — Usage Detail';
+  var html = '';
+  // Summary
+  html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">';
+  html += '<div class="stat"><div class="stat-val" style="color:var(--water);font-size:16px;">'+stock.totalIn.toFixed(1)+' '+stock.unit+'</div><div class="stat-lab">📦 Total In</div></div>';
+  html += '<div class="stat"><div class="stat-val" style="color:var(--harvest);font-size:16px;">'+stock.totalOut.toFixed(1)+' '+stock.unit+'</div><div class="stat-lab">⬆️ Total Used</div></div>';
+  html += '<div class="stat"><div class="stat-val" style="color:'+(stock.remaining>=0?'var(--leaf)':'var(--danger)')+';font-size:16px;">'+(stock.remaining>=0?'+':'')+stock.remaining.toFixed(1)+' '+stock.unit+'</div><div class="stat-lab">🏷️ Remaining</div></div>';
+  html += '</div>';
+  if(!stock.usageLog.length){
+    html += '<div class="empty"><div class="empty-icon">📋</div>No usage logged yet.</div>';
+  } else {
+    html += '<h3 style="margin-bottom:8px;color:var(--muted);font-size:13px;">WHERE IT WAS USED</h3>';
+    stock.usageLog.forEach(function(u){
+      html += '<div class="log" style="border-color:var(--harvest);background:var(--harvestlight);">';
+      html += '<div style="flex:1;"><strong>'+u.field+'</strong> · '+u.section;
+      html += '<span class="badge bk" style="margin-left:6px;">'+u.type+'</span>';
+      html += '<span class="badge" style="margin-left:4px;background:var(--harvest);color:#fff;">'+fmtQty(u.qty,u.unit)+'</span>';
+      html += '<div class="log-meta">📅 '+fmtD(u.date)+'</div>';
+      html += '</div></div>';
+    });
+  }
+  document.getElementById('prod-usage-content').innerHTML = html;
+  openModal('prod-usage-modal');
+}
 function renderProducts(){
   var el = document.getElementById('prod-list'); if(!el) return;
   var rows = DB.products.filter(function(p){ return curProdFilter==='all' || p.category===curProdFilter; });
@@ -2056,10 +2110,11 @@ function renderProducts(){
     if(stock.totalIn>0||stock.totalOut>0){
       var remaining = stock.remaining;
       var stockColor = remaining>0?'var(--leaf)':remaining<0?'var(--danger)':'var(--muted)';
-      html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:12px;text-align:center;">';
+      html += '<div onclick="showProductUsage(\''+p.id+'\')" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:12px;text-align:center;cursor:pointer;">';
       html += '<div><div style="font-weight:700;color:var(--water);">'+stock.totalIn.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">📦 In</div></div>';
       html += '<div><div style="font-weight:700;color:var(--harvest);">'+stock.totalOut.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">⬆️ Used</div></div>';
       html += '<div><div style="font-weight:700;color:'+stockColor+';">'+(remaining>=0?'+':'')+remaining.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">🏷️ Left</div></div>';
+      html += '<div style="grid-column:1/-1;font-size:10px;color:var(--water);padding-top:2px;">👆 Tap to see usage</div>';
       html += '</div>';
     }
     html += '</div><div style="display:flex;gap:6px;flex-shrink:0;"><button class="btn btn-edit btn-sm" onclick="editProduct(\''+p.id+'\')">✏️</button><button class="log-del" onclick="deleteProduct(\''+p.id+'\')">✕</button></div></div>';
@@ -2599,10 +2654,11 @@ function filterPurchProds(cat, btn){
     if(perUnit) html += '<div style="font-size:12px;color:var(--leaf);font-weight:700;margin-top:2px;">'+fmtCur(perUnit,p.currency)+'/'+priceLabel(p.unit)+'</div>';
     if(stock.totalIn>0||stock.totalOut>0){
       var rem = stock.remaining;
-      html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:11px;text-align:center;margin-top:5px;padding-top:5px;border-top:1px solid var(--border);">';
+      html += '<div onclick="showProductUsage(\''+p.id+'\')" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:11px;text-align:center;margin-top:5px;padding-top:5px;border-top:1px solid var(--border);cursor:pointer;">';
       html += '<div><div style="font-weight:700;color:var(--water);">'+stock.totalIn.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">In</div></div>';
       html += '<div><div style="font-weight:700;color:var(--harvest);">'+stock.totalOut.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">Used</div></div>';
       html += '<div><div style="font-weight:700;color:'+(rem>=0?'var(--leaf)':'var(--danger)')+';">'+(rem>=0?'+':'')+rem.toFixed(1)+' '+p.unit+'</div><div style="color:var(--muted);">Left</div></div>';
+      html += '<div style="grid-column:1/-1;font-size:10px;color:var(--water);padding-top:2px;">👆 Tap for usage</div>';
       html += '</div>';
     }
     html += '</div><button class="btn btn-edit btn-sm" onclick="showGlobal(\'products\',null);editProduct(\''+p.id+'\')">✏️</button></div>';
