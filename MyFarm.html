@@ -541,7 +541,35 @@ if (!DB) {
 }
 var keys = ['fields','irrigation','fertilizer','pesticide','spray','harvest','equipment','weather','reminders','rotation','photos','labour','electric','products','purchases'];
 keys.forEach(function(k){ if(!DB[k]) DB[k]=[]; });
-function save(){ localStorage.setItem('myfarm3', JSON.stringify(DB)); }
+function save(){
+  localStorage.setItem('myfarm3', JSON.stringify(DB));
+  // Track save count — auto-backup every 20 saves OR every 24 hours
+  var saveCount = parseInt(localStorage.getItem('myfarm_save_count')||'0') + 1;
+  localStorage.setItem('myfarm_save_count', saveCount);
+  var lastBackup = parseInt(localStorage.getItem('myfarm_last_backup')||'0');
+  var now = Date.now();
+  var hoursSince = (now - lastBackup) / 3600000;
+  if(saveCount >= 20 || hoursSince >= 24){
+    silentBackup();
+    localStorage.setItem('myfarm_save_count', '0');
+    localStorage.setItem('myfarm_last_backup', now);
+  }
+}
+function silentBackup(){
+  try {
+    var data = JSON.stringify(DB, null, 2);
+    var date = new Date().toISOString().split('T')[0];
+    var filename = 'MyFarm-Auto-'+date+'.json';
+    var blob = new Blob([data], {type:'application/json'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+  } catch(e){ /* silent fail */ }
+}
 
 // ═══ DOSAGE MIGRATION ═══
 // Parses amount strings like "500 L", "30kg/ha", "4lt/ha", "93.8 L/ha"
@@ -3758,6 +3786,19 @@ if(!navigator.onLine) document.getElementById('offline-bar').style.display='bloc
 
 // ═══ INIT ═══
 renderFields();
+// Auto-backup check on startup — if it's been over 24 hours since last backup
+(function(){
+  var lastBackup = parseInt(localStorage.getItem('myfarm_last_backup')||'0');
+  var hoursSince = (Date.now() - lastBackup) / 3600000;
+  if(lastBackup > 0 && hoursSince >= 24){
+    setTimeout(function(){
+      silentBackup();
+      localStorage.setItem('myfarm_last_backup', Date.now());
+      localStorage.setItem('myfarm_save_count', '0');
+      showToast('💾 Auto-backup saved to Downloads');
+    }, 3000); // wait 3s after app loads
+  }
+})();
 
 // ═══ SERVICE WORKER ═══
 if('serviceWorker' in navigator){
