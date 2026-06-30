@@ -122,6 +122,49 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 <body>
 <div id="offline-bar">📡 Offline — MyFarm works without internet</div>
 
+<!-- SPLASH SCREEN -->
+<div id="splash-screen" style="
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:var(--soil);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  z-index:9999;
+  transition:opacity 0.6s ease;
+">
+  <!-- Watermark wheat background -->
+  <div style="position:absolute;font-size:220px;opacity:0.07;user-select:none;line-height:1;">🌾</div>
+
+  <!-- Logo and text -->
+  <div style="text-align:center;position:relative;z-index:1;">
+    <div style="font-size:72px;margin-bottom:8px;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));">🌾</div>
+    <div style="font-family:Georgia,serif;font-size:42px;font-weight:bold;color:var(--straw);letter-spacing:2px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">MyFarm</div>
+    <div style="width:60px;height:2px;background:var(--straw);margin:12px auto;opacity:0.5;"></div>
+    <div style="font-size:13px;color:var(--wheat);opacity:0.8;margin-bottom:4px;letter-spacing:1px;">Farm Management</div>
+    <div style="font-size:12px;color:var(--straw);opacity:0.6;margin-top:40px;">© Created by Cornelio Neufeld</div>
+    <div style="font-size:11px;color:var(--straw);opacity:0.4;margin-top:4px;">All rights reserved</div>
+  </div>
+
+  <!-- Loading dots -->
+  <div style="position:absolute;bottom:60px;display:flex;gap:8px;" id="splash-dots">
+    <div class="splash-dot"></div>
+    <div class="splash-dot"></div>
+    <div class="splash-dot"></div>
+  </div>
+</div>
+
+<style>
+.splash-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--straw);opacity:0.3;
+  animation:splashPulse 1.2s ease-in-out infinite;
+}
+.splash-dot:nth-child(2){ animation-delay:0.2s; }
+.splash-dot:nth-child(3){ animation-delay:0.4s; }
+@keyframes splashPulse{
+  0%,100%{ opacity:0.2;transform:scale(0.8); }
+  50%{ opacity:0.8;transform:scale(1.2); }
+}
+</style>
+
 <nav>
   <div class="nav-brand" onclick="goHome()">🌾 MyFarm</div>
   <div class="nav-tabs">
@@ -3852,6 +3895,14 @@ if(!navigator.onLine) document.getElementById('offline-bar').style.display='bloc
 
 // ═══ INIT ═══
 renderFields();
+// Dismiss splash screen
+setTimeout(function(){
+  var splash = document.getElementById('splash-screen');
+  if(splash){
+    splash.style.opacity = '0';
+    setTimeout(function(){ splash.style.display='none'; }, 650);
+  }
+}, 2200);
 // Auto-backup check on startup — if it's been over 24 hours since last backup
 (function(){
   var lastBackup = parseInt(localStorage.getItem('myfarm_last_backup')||'0');
