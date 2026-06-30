@@ -127,9 +127,7 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="showGlobal('fields',this)">Fields</button>
     <button class="nav-tab" onclick="showGlobal('irrigation',this)">💧 Irrigation</button>
-    <button class="nav-tab" onclick="showGlobal('fertilizer',this)">🌿 Fertilizer</button>
-    <button class="nav-tab" onclick="showGlobal('pesticide',this)">🛡️ Pesticide</button>
-    <button class="nav-tab" onclick="showGlobal('spray',this)">🧪 Spray</button>
+    <button class="nav-tab" onclick="showGlobal('applications',this)">🌱 Applications</button>
     <button class="nav-tab" onclick="showGlobal('harvest',this)">🌽 Harvest</button>
     <button class="nav-tab" onclick="showGlobal('labour',this)">👷 Labour</button>
     <button class="nav-tab" onclick="showGlobal('purchases',this)">🧾 Expenses</button>
@@ -192,37 +190,34 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
   <h2 style="margin-top:18px;">History</h2>
   <div id="g-irr-log"></div>
 </div>
-<div id="page-fertilizer" class="page">
-  <h1>🌿 Fertilizer — All Fields</h1>
-  <div class="form-row" style="margin-bottom:8px;">
-    <div class="fg"><label>Field</label><select id="gfert-field" onchange="onGfertFieldChange()"><option value="">All Fields</option></select></div>
-    <div class="fg"><label>Section</label><select id="gfert-section" onchange="renderGlobalFertTotals()"><option value="">All Sections</option></select></div>
+<div id="page-applications" class="page">
+  <h1>🌱 Applications</h1>
+  <div class="mod-tabs" id="app-tabs">
+    <button class="mod-tab active" onclick="showAppTab('fertilizer',this)">🌿 Fertilizer</button>
+    <button class="mod-tab" onclick="showAppTab('pesticide',this)">🛡️ Pesticide</button>
+    <button class="mod-tab" onclick="showAppTab('spray',this)">🧪 Spray</button>
   </div>
-  <div id="gfert-totals"></div>
-  <div class="mod-tabs" id="fert-view-tabs">
-    <button class="mod-tab active" onclick="showFertView('all',this)">All</button>
-    <button class="mod-tab" onclick="showFertView('field',this)">By Field</button>
-    <button class="mod-tab" onclick="showFertView('section',this)">By Section</button>
+
+  <!-- SHARED FIELD/SECTION FILTER -->
+  <div class="form-row" style="margin:8px 0;">
+    <div class="fg"><label>Field</label><select id="app-field" onchange="onAppFieldChange()"><option value="">All Fields</option></select></div>
+    <div class="fg"><label>Section</label><select id="app-section" onchange="renderAppTotals()"><option value="">All Sections</option></select></div>
   </div>
-  <div id="g-fert-log"></div>
-</div>
-<div id="page-pesticide" class="page">
-  <h1>🛡️ Pesticide — All Fields</h1>
-  <div class="form-row" style="margin-bottom:8px;">
-    <div class="fg"><label>Field</label><select id="gpest-field" onchange="onGpestFieldChange()"><option value="">All Fields</option></select></div>
-    <div class="fg"><label>Section</label><select id="gpest-section" onchange="renderGlobalPestTotals()"><option value="">All Sections</option></select></div>
+
+  <!-- FERTILIZER TAB -->
+  <div id="app-tab-fertilizer">
+    <div id="app-fert-totals"></div>
   </div>
-  <div id="gpest-totals"></div>
-  <div id="g-pest-log"></div>
-</div>
-<div id="page-spray" class="page">
-  <h1>🧪 Spray — All Fields</h1>
-  <div class="form-row" style="margin-bottom:8px;">
-    <div class="fg"><label>Field</label><select id="gspray-field" onchange="onGsprayFieldChange()"><option value="">All Fields</option></select></div>
-    <div class="fg"><label>Section</label><select id="gspray-section" onchange="renderGlobalSprayTotals()"><option value="">All Sections</option></select></div>
+
+  <!-- PESTICIDE TAB -->
+  <div id="app-tab-pesticide" style="display:none;">
+    <div id="app-pest-totals"></div>
   </div>
-  <div id="gspray-totals"></div>
-  <div id="g-spray-log"></div>
+
+  <!-- SPRAY TAB -->
+  <div id="app-tab-spray" style="display:none;">
+    <div id="app-spray-totals"></div>
+  </div>
 </div>
 <div id="page-harvest" class="page"><h1>🌽 Harvest — All Fields</h1><div class="stats" id="g-harv-stats"></div><div id="g-harv-log"></div></div>
 <div id="page-labour" class="page">
@@ -3055,33 +3050,49 @@ function buildGlobalTotalsHtml(rows, getProducts, color, areaUnit){
   return html;
 }
 
-function renderGlobalFertTotals(){
-  var el = document.getElementById('gfert-totals'); if(!el) return;
-  var fid = document.getElementById('gfert-field') ? document.getElementById('gfert-field').value : '';
-  var sid = document.getElementById('gfert-section') ? document.getElementById('gfert-section').value : '';
-  var rows = DB.fertilizer.filter(function(r){
-    return (!fid||String(r.fid)===String(fid)) && (!sid||String(r.sid)===String(sid));
+var curAppTab = 'fertilizer';
+function showAppTab(tab, btn){
+  curAppTab = tab;
+  ['fertilizer','pesticide','spray'].forEach(function(t){
+    var el = document.getElementById('app-tab-'+t);
+    if(el) el.style.display = t===tab ? '' : 'none';
   });
-  el.innerHTML = buildGlobalTotalsHtml(rows, function(r){ return r.products||[]; }, 'var(--leaf)', 'ha');
+  document.querySelectorAll('#app-tabs .mod-tab').forEach(function(t){ t.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+  renderAppTotals();
 }
-function renderGlobalPestTotals(){
-  var el = document.getElementById('gpest-totals'); if(!el) return;
-  var fid = document.getElementById('gpest-field') ? document.getElementById('gpest-field').value : '';
-  var sid = document.getElementById('gpest-section') ? document.getElementById('gpest-section').value : '';
-  var rows = DB.pesticide.filter(function(r){
-    return (!fid||String(r.fid)===String(fid)) && (!sid||String(r.sid)===String(sid));
-  });
-  el.innerHTML = buildGlobalTotalsHtml(rows, function(r){ return [{name:r.name,totalApplied:r.totalApplied,rateUnit:r.rateUnit,unit:r.rateUnit||'L'}]; }, 'var(--purple)', 'ha');
+function onAppFieldChange(){
+  var fid = document.getElementById('app-field') ? document.getElementById('app-field').value : '';
+  var sec = document.getElementById('app-section');
+  if(sec){
+    if(!fid){ sec.innerHTML='<option value="">All Sections</option>'; }
+    else {
+      var f = DB.fields.find(function(x){ return String(x.id)===String(fid); });
+      sec.innerHTML='<option value="">All Sections</option>'+(f?smartSort(f.sections).map(function(s){ return '<option value="'+s.id+'">'+s.name+'</option>'; }).join(''):'');
+    }
+  }
+  renderAppTotals();
 }
-function renderGlobalSprayTotals(){
-  var el = document.getElementById('gspray-totals'); if(!el) return;
-  var fid = document.getElementById('gspray-field') ? document.getElementById('gspray-field').value : '';
-  var sid = document.getElementById('gspray-section') ? document.getElementById('gspray-section').value : '';
-  var rows = DB.spray.filter(function(r){
-    return (!fid||String(r.fid)===String(fid)) && (!sid||String(r.sid)===String(sid));
-  });
-  el.innerHTML = buildGlobalTotalsHtml(rows, function(r){ return r.chemicals||[]; }, 'var(--harvest)', 'ha');
+function renderAppTotals(){
+  var fid = document.getElementById('app-field') ? document.getElementById('app-field').value : '';
+  var sid = document.getElementById('app-section') ? document.getElementById('app-section').value : '';
+  if(curAppTab==='fertilizer'){
+    var rows = DB.fertilizer.filter(function(r){ return (!fid||String(r.fid)===String(fid))&&(!sid||String(r.sid)===String(sid)); });
+    var el = document.getElementById('app-fert-totals');
+    if(el) el.innerHTML = buildGlobalTotalsHtml(rows, function(r){ return r.products||[]; }, 'var(--leaf)', 'ha');
+  } else if(curAppTab==='pesticide'){
+    var rows = DB.pesticide.filter(function(r){ return (!fid||String(r.fid)===String(fid))&&(!sid||String(r.sid)===String(sid)); });
+    var el = document.getElementById('app-pest-totals');
+    if(el) el.innerHTML = buildGlobalTotalsHtml(rows, function(r){ return [{name:r.name,totalApplied:r.totalApplied,rateUnit:r.rateUnit||'L'}]; }, 'var(--purple)', 'ha');
+  } else if(curAppTab==='spray'){
+    var rows = DB.spray.filter(function(r){ return (!fid||String(r.fid)===String(fid))&&(!sid||String(r.sid)===String(sid)); });
+    var el = document.getElementById('app-spray-totals');
+    if(el) el.innerHTML = buildGlobalTotalsHtml(rows, function(r){ return r.chemicals||[]; }, 'var(--harvest)', 'ha');
+  }
 }
+function renderGlobalFertTotals(){ renderAppTotals(); }
+function renderGlobalPestTotals(){ renderAppTotals(); }
+function renderGlobalSprayTotals(){ renderAppTotals(); }
 
 function renderFertLog(fid, sid, elId, global){
   var el=document.getElementById(elId); if(!el) return;
@@ -3320,25 +3331,24 @@ function renderGlobal(id){
     renderGlobalLog('irrigation','g-irr-log');
     renderElectric();
   }
-  if(id==='fertilizer'){
-    gPopulateFieldSelect('gfert-field');
-    gfertPopulateSections();
-    renderGlobalFertTotals();
-    curFertView = 'all';
-    document.querySelectorAll('#fert-view-tabs .mod-tab').forEach(function(t,i){ t.classList.toggle('active', i===0); });
-    renderFertLog(null,null,'g-fert-log',true);
+  if(id==='applications'){
+    // Populate shared field dropdown
+    var appField = document.getElementById('app-field');
+    if(appField){
+      appField.innerHTML = '<option value="">All Fields</option>'+smartSort(DB.fields).map(function(f){ return '<option value="'+f.id+'">'+f.name+'</option>'; }).join('');
+    }
+    document.getElementById('app-section').innerHTML = '<option value="">All Sections</option>';
+    curAppTab = 'fertilizer';
+    document.querySelectorAll('#app-tabs .mod-tab').forEach(function(t,i){ t.classList.toggle('active',i===0); });
+    ['fertilizer','pesticide','spray'].forEach(function(t){
+      var el = document.getElementById('app-tab-'+t);
+      if(el) el.style.display = t==='fertilizer' ? '' : 'none';
+    });
+    renderAppTotals();
   }
-  if(id==='pesticide'){
-    gPopulateFieldSelect('gpest-field');
-    gpestPopulateSections();
-    renderGlobalPestTotals();
-    renderGlobalLog('pesticide','g-pest-log');
-  }
-  if(id==='spray'){
-    gPopulateFieldSelect('gspray-field');
-    gsprayPopulateSections();
-    renderGlobalSprayTotals();
-    renderGlobalLog('spray','g-spray-log');
+  if(id==='fertilizer' || id==='pesticide' || id==='spray'){
+    // Legacy — redirect to applications page
+    showGlobal('applications', document.querySelector('.nav-tab[onclick*="applications"]'));
   }
   if(id==='harvest'){
     var v=DB.harvest.reduce(function(a,r){ return a+(parseFloat(r.value)||0); },0).toFixed(2);
