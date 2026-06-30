@@ -2366,6 +2366,7 @@ function calcPurchItemTotal(input){
   calcPurchTotal();
 }
 function calcPurchTotal(){
+  if(window._purchLoadingEdit) return; // don't overwrite saved totals during edit load
   var rows = document.querySelectorAll('#purch-items > div[id^="pi-"]');
   var total = 0;
   rows.forEach(function(r){
@@ -2493,14 +2494,21 @@ function editPurchase(id){
   document.getElementById('purch-supplier').value = p.supplier||'';
   document.getElementById('purch-ref').value = p.ref||'';
   document.getElementById('purch-cur').value = p.currency||'MXN';
+  document.getElementById('purch-notes').value = p.notes||'';
+  // Clear items
+  document.getElementById('purch-items').innerHTML='';
+  purchItems=[];
+  // Load items — suppress auto-total recalculation during load
+  window._purchLoadingEdit = true;
+  (p.items||[]).forEach(function(item){ addPurchItem(item); });
+  window._purchLoadingEdit = false;
+  // Now restore the saved totals AFTER items are loaded
   document.getElementById('purch-total').value = p.total||'';
   var taxEl = document.getElementById('purch-tax');
   if(taxEl) taxEl.value = p.tax||'';
+  var pctEl = document.getElementById('purch-tax-pct');
+  if(pctEl) pctEl.value = '';
   calcPurchGrandTotal();
-  document.getElementById('purch-notes').value = p.notes||'';
-  document.getElementById('purch-items').innerHTML='';
-  purchItems=[];
-  (p.items||[]).forEach(function(item){ addPurchItem(item); });
   document.getElementById('purch-form-title').textContent='Edit Purchase';
   document.getElementById('purch-btn').textContent='💾 Update Purchase';
   showPurchTab('log', document.querySelector('#purch-tabs .mod-tab:nth-child(1)'));
