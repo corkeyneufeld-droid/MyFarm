@@ -2394,12 +2394,11 @@ function addPurchase(){
     var unit = r.querySelector('.pi-unit').value;
     var density = r.querySelector('.pi-density').value;
     var totalQty = container==='bulk' ? qty : qty*size;
-    var pricePerUnit = container==='bulk' ? price : (size>0?price/size:0);
     items.push({
       name:name, category:r.querySelector('.pi-cat').value,
       qty:String(qty), container:container,
       containerSize:String(size), unit:unit,
-      unitPrice:String(pricePerUnit), lineTotal:String(qty*price),
+      unitPrice:String(price), lineTotal:String(qty*price),
       density:density, totalQty:String(totalQty)
     });
   });
