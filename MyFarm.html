@@ -500,6 +500,9 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
       <div class="fg"><label>Area</label><input type="number" id="field-area-num" placeholder="45" step="0.01" min="0"/></div>
       <div class="fg"><label>Unit</label><select id="field-area-unit"><option value="ha">Hectares (ha)</option><option value="ac">Acres (ac)</option></select></div>
     </div>
+    <div class="form-row">
+      <div class="fg"><label>Well Output (GPM)</label><input type="number" id="field-well-gpm" placeholder="e.g. 500" step="1" min="0"/></div>
+    </div>
     <div class="form-row"><div class="fg"><label>Description</label><input type="text" id="field-desc" placeholder="Soil type, notes…"/></div></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
       <button class="btn btn-outline" onclick="closeModal('field-modal')">Cancel</button>
@@ -643,6 +646,33 @@ function getSectionAreaForIds(fid, sid){
   var s = f.sections.find(function(x){ return String(x.id)===String(sid); });
   if(!s || !s.area) return null;
   var parts = s.area.split(' ');
+  var num = parseFloat(parts[0]);
+  if(!num) return null;
+  return { num:num, unit:parts[1]||'ha' };
+}
+// ═══ WELL / IRRIGATION DEPTH MATH ═══
+var GAL_PER_ACRE_INCH = 27154; // gallons of water to cover 1 acre, 1 inch deep
+var ACRES_PER_HA = 2.47105;
+function areaToAcres(num, unit){
+  if(!num) return 0;
+  return unit==='ha' ? num*ACRES_PER_HA : num;
+}
+function fieldWellGpm(fid){
+  var f = DB.fields.find(function(x){ return String(x.id)===String(fid); });
+  return f && f.wellGpm ? parseFloat(f.wellGpm)||0 : 0;
+}
+function irrGallons(hours, gpm){ return (parseFloat(hours)||0)*60*(parseFloat(gpm)||0); }
+// Depth in inches applied, given gallons pumped and the area (as {num,unit}) it was spread over
+function irrInchesFromGallons(gallons, areaObj){
+  if(!areaObj || !areaObj.num) return 0;
+  var acres = areaToAcres(areaObj.num, areaObj.unit);
+  if(!acres) return 0;
+  return gallons/(GAL_PER_ACRE_INCH*acres);
+}
+function fieldAreaObj(fid){
+  var f = DB.fields.find(function(x){ return String(x.id)===String(fid); });
+  if(!f || !f.area) return null;
+  var parts = f.area.split(' ');
   var num = parseFloat(parts[0]);
   if(!num) return null;
   return { num:num, unit:parts[1]||'ha' };
@@ -920,6 +950,7 @@ function openFieldModal(){
   document.getElementById('field-name').value = '';
   document.getElementById('field-area-num').value = '';
   document.getElementById('field-area-unit').value = 'ha';
+  document.getElementById('field-well-gpm').value = '';
   document.getElementById('field-desc').value = '';
   openModal('field-modal');
 }
@@ -932,6 +963,7 @@ function editField(id){
   var parts = (f.area||'').split(' ');
   document.getElementById('field-area-num').value = parts[0]||'';
   document.getElementById('field-area-unit').value = parts[1]||'ha';
+  document.getElementById('field-well-gpm').value = f.wellGpm||'';
   document.getElementById('field-desc').value = f.desc||'';
   openModal('field-modal');
 }
@@ -941,13 +973,14 @@ function saveField(){
   var num = document.getElementById('field-area-num').value.trim();
   var unit = document.getElementById('field-area-unit').value;
   var area = num ? num+' '+unit : '';
+  var wellGpm = document.getElementById('field-well-gpm').value.trim();
   var desc = document.getElementById('field-desc').value.trim();
   var editId = document.getElementById('field-edit-id').value;
   if(editId){
     var f = DB.fields.find(function(x){ return String(x.id)===String(editId); });
-    if(f){ f.name=name; f.area=area; f.desc=desc; }
+    if(f){ f.name=name; f.area=area; f.wellGpm=wellGpm; f.desc=desc; }
   } else {
-    DB.fields.push({ id: Date.now(), name:name, area:area, desc:desc, sections:[] });
+    DB.fields.push({ id: Date.now(), name:name, area:area, wellGpm:wellGpm, desc:desc, sections:[] });
   }
   save();
   closeModal('field-modal');
@@ -1841,6 +1874,14 @@ function renderIrrStats(fid,sid){
   }
   el.style.gridTemplateColumns = 'repeat(auto-fit,minmax(90px,1fr))';
   el.innerHTML='<div class="stat"><div class="stat-val bl">'+total+'</div><div class="stat-lab">Total Hours</div></div><div class="stat"><div class="stat-val bl">'+month+'</div><div class="stat-lab">This Month</div></div><div class="stat"><div class="stat-val bl">'+rows.length+'</div><div class="stat-lab">Sessions</div></div><div class="stat"><div class="stat-val bl">'+daysSince+'</div><div class="stat-lab">Days Since Last</div></div>';
+  // Accumulated water depth, based on this field's well GPM and this section's own area
+  var gpm = fieldWellGpm(fid);
+  var areaObj = getSectionAreaForIds(fid, sid);
+  if(gpm && areaObj){
+    var totalGallons = irrGallons(rows.reduce(function(s,r){ return s+r.hours; },0), gpm);
+    var inches = irrInchesFromGallons(totalGallons, areaObj);
+    el.innerHTML += '<div class="stat"><div class="stat-val bl">'+inches.toFixed(2)+'"</div><div class="stat-lab">Accum. Water Depth</div></div>';
+  }
 }
 
 // ═══ ELECTRIC BILLS ═══
@@ -3342,7 +3383,7 @@ function renderGlobal(id){
         var html = '<div class="card" style="border:2px solid var(--water);background:var(--waterlight);margin-bottom:12px;">';
         html += '<h3 style="color:var(--water);margin-bottom:10px;">⚡ Electric Cost per Irrigation Hour — by Field</h3>';
         html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-        html += '<tr style="border-bottom:2px solid var(--water);"><th style="text-align:left;padding:4px;">Field</th><th style="text-align:right;padding:4px;">Total Bills</th><th style="text-align:right;padding:4px;">Irr. Hours</th><th style="text-align:right;padding:4px;">Cost/Hour</th></tr>';
+        html += '<tr style="border-bottom:2px solid var(--water);"><th style="text-align:left;padding:4px;">Field</th><th style="text-align:right;padding:4px;">Total Bills</th><th style="text-align:right;padding:4px;">Irr. Hours</th><th style="text-align:right;padding:4px;">Cost/Hour</th><th style="text-align:right;padding:4px;">Cost/Inch</th></tr>';
         var sorted = smartSort(DB.fields);
         sorted.forEach(function(f){
           // Total electric bills for this field
@@ -3367,11 +3408,25 @@ function renderGlobal(id){
             billsDisplay = '<span style="color:var(--muted);">—</span>';
             costPerHr = '<span style="color:var(--muted);">—</span>';
           }
+          // Cost per inch — needs well GPM + field area to convert hours into water depth
+          var costPerInch = '<span style="color:var(--muted);">—</span>';
+          var gpm = fieldWellGpm(f.id);
+          var areaObj = fieldAreaObj(f.id);
+          if(gpm && areaObj && totalHrs>0){
+            var totalInches = irrInchesFromGallons(irrGallons(totalHrs, gpm), areaObj);
+            if(totalInches>0){
+              if(billsMXN>0) costPerInch = fmtCur(billsMXN/totalInches,'MXN')+'/in';
+              else if(billsUSD>0) costPerInch = fmtCur(billsUSD/totalInches,'USD')+'/in';
+            }
+          } else if(!gpm){
+            costPerInch = '<span style="color:var(--muted);">No well GPM set</span>';
+          }
           html += '<tr style="border-bottom:1px solid var(--border);">';
           html += '<td style="padding:5px 4px;font-weight:600;">'+f.name+'<div style="font-size:11px;color:var(--muted);">'+billCount+' bill'+(billCount!==1?'s':'')+'</div></td>';
           html += '<td style="text-align:right;padding:5px 4px;">'+billsDisplay+'</td>';
           html += '<td style="text-align:right;padding:5px 4px;color:var(--water);font-weight:700;">'+(totalHrs?totalHrs.toFixed(1)+' hrs':'<span style="color:var(--muted);">—</span>')+'</td>';
           html += '<td style="text-align:right;padding:5px 4px;color:var(--danger);font-weight:700;">'+costPerHr+'</td>';
+          html += '<td style="text-align:right;padding:5px 4px;color:var(--danger);font-weight:700;">'+costPerInch+'</td>';
           html += '</tr>';
         });
         html += '</table></div>';
