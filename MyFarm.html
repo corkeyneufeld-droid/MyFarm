@@ -662,6 +662,14 @@ function fieldWellGpm(fid){
   return f && f.wellGpm ? parseFloat(f.wellGpm)||0 : 0;
 }
 function irrGallons(hours, gpm){ return (parseFloat(hours)||0)*60*(parseFloat(gpm)||0); }
+// Gallons actually received by a section during one logged session, accounting for
+// a shared well (gpmShare = % of the well's full output this section received, default 100)
+function sessionGallons(row){
+  var gpm = fieldWellGpm(row.fid);
+  var shareRaw = (row.gpmShare!==undefined && row.gpmShare!==null && row.gpmShare!=='') ? parseFloat(row.gpmShare) : 100;
+  var share = isNaN(shareRaw) ? 100 : shareRaw;
+  return irrGallons(row.hours, gpm*(share/100));
+}
 // Depth in inches applied, given gallons pumped and the area (as {num,unit}) it was spread over
 function irrInchesFromGallons(gallons, areaObj){
   if(!areaObj || !areaObj.num) return 0;
@@ -1195,7 +1203,7 @@ function showMod(mod, btn){
 }
 
 function buildMod(mod){
-  if(mod==='irrigation') return '<div class="stats" id="sm-irr-stats"></div><div class="card"><h2 id="irr-form-title">Log Irrigation Session</h2><input type="hidden" id="irr-edit-id"/><div class="form-row"><div class="fg"><label>Start Date</label><input type="date" id="irr-date"/></div><div class="fg"><label>Start Time</label><input type="time" id="irr-start-t"/></div></div><div class="form-row"><div class="fg"><label>End Date</label><input type="date" id="irr-end-date"/></div><div class="fg"><label>End Time</label><input type="time" id="irr-end-t"/></div></div><div class="form-row"><div class="fg"><label>Water Source</label><input type="text" id="irr-source" placeholder="Drip, Sprinkler…"/></div><div class="fg"><label>Notes</label><input type="text" id="irr-notes"/></div></div><button class="btn btn-blue" id="irr-btn">💧 Log Session</button></div><h2>History</h2><div id="sm-irr-log"></div>';
+  if(mod==='irrigation') return '<div class="stats" id="sm-irr-stats"></div><div class="card"><h2 id="irr-form-title">Log Irrigation Session</h2><input type="hidden" id="irr-edit-id"/><div class="form-row"><div class="fg"><label>Start Date</label><input type="date" id="irr-date"/></div><div class="fg"><label>Start Time</label><input type="time" id="irr-start-t"/></div></div><div class="form-row"><div class="fg"><label>End Date</label><input type="date" id="irr-end-date"/></div><div class="fg"><label>End Time</label><input type="time" id="irr-end-t"/></div></div><div class="form-row"><div class="fg"><label>Water Source</label><input type="text" id="irr-source" placeholder="Drip, Sprinkler…"/></div><div class="fg"><label>Well Output Received (%)</label><input type="number" id="irr-share" placeholder="100" min="1" max="100" step="1"/></div></div><div class="form-row"><div class="fg"><label>Notes</label><input type="text" id="irr-notes"/></div></div><p style="font-size:12px;color:var(--muted);margin:-6px 0 10px;">If this section shares the well with another running at the same time, enter the % of the well\'s full output this section actually got. Leave blank for 100%.</p><button class="btn btn-blue" id="irr-btn">💧 Log Session</button></div><h2>History</h2><div id="sm-irr-log"></div>';
   if(mod==='fertilizer') return '<div class="card"><h2>Log Fertilizer Application</h2><p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Set the date then add products.</p><div class="form-row"><div class="fg"><label>Date *</label><input type="date" id="fert-date"/></div><div class="fg" style="flex:2"><label>Notes</label><input type="text" id="fert-notes" placeholder="Method, conditions…"/></div></div><hr class="divider"/><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><h3>Products</h3><button class="btn btn-outline btn-sm" onclick="addFertRow()">+ Add Product</button></div><div id="fert-rows"></div><div id="fert-empty" style="font-size:12px;color:var(--muted);padding:4px 0 10px;">No products added yet.</div><hr class="divider"/><button class="btn btn-green" id="fert-btn">🌿 Save Application</button></div><div id="fert-season-summary"></div><h2>History</h2><div id="sm-fert-log"></div>';
   if(mod==='pesticide') return '<div class="card"><h2>Log Pesticide Application</h2><div class="form-row"><div class="fg" style="flex:2"><label>Registered Product</label><select id="pest-product" onchange="onPestProductPick(this)"><option value="">— Manual Entry —</option></select></div></div><div class="form-row"><div class="fg" style="flex:2"><label>Product *</label><input type="text" id="pest-name" placeholder="e.g. Chlorpyrifos"/></div><div class="fg"><label>Brand</label><input type="text" id="pest-brand"/></div></div><div class="form-row"><div class="fg"><label>Type</label><select id="pest-type" onchange="refreshPestProductOptions()"><option>Insecticide</option><option>Herbicide</option><option>Fungicide</option><option>Pesticide</option><option>Other</option></select></div><div class="fg"><label>Date</label><input type="date" id="pest-date"/></div></div><div id="pest-used-wrap" style="display:none;"></div>'+dosageRowHtml('pest-total-amt','pest-rate-amt','pest-amt-unit','pest-dosage-display')+'<input type="hidden" id="pest-rate"/><div class="form-row"><div class="fg" style="flex:2"><label>Notes</label><input type="text" id="pest-notes"/></div></div><button class="btn btn-purple" id="pest-btn">🛡️ Log</button></div><div id="pest-season-summary"></div><h2>History</h2><div id="sm-pest-log"></div>';
   if(mod==='spray') return '<div class="card"><h2>Log Spray Application</h2><p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Set the application details then add each product used.</p><div class="form-row"><div class="fg"><label>Date *</label><input type="date" id="spray-date"/></div><div class="fg"><label>Application Method</label><select id="spray-method"><option value="">— Select —</option><option value="Foliar">Foliar</option><option value="In-Furrow">In-Furrow</option><option value="Drip/Fertigation">Drip / Fertigation</option><option value="Broadcast">Broadcast</option><option value="Band">Band</option><option value="Soil Drench">Soil Drench</option><option value="Seed Treatment">Seed Treatment</option><option value="Aerial">Aerial</option><option value="Other">Other</option></select></div></div><div class="form-row"><div class="fg" style="flex:2"><label>Target / Purpose</label><input type="text" id="spray-target" placeholder="e.g. Broadleaf weeds, Zinc deficiency"/></div></div><div class="form-row"><div class="fg"><label>Sprayed By</label><select id="spray-op"><option value="">— Select —</option><option value="Self-Sprayed">Self-Sprayed</option><option value="Custom Sprayed">Custom Sprayed</option><option value="Plane Sprayed">Plane Sprayed</option><option value="Drone">Drone</option></select></div><div class="fg"><label>Water Vol</label><input type="number" id="spray-water" step="0.1" placeholder="e.g. 200"/></div><div class="fg"><label>Per</label><select id="spray-water-unit"><option value="ha">Per ha</option><option value="ac">Per ac</option></select></div></div><div class="form-row"><div class="fg"><label>Temp (°C)</label><input type="number" id="spray-temp"/></div><div class="fg"><label>Re-entry Interval</label><input type="text" id="spray-reentry" placeholder="e.g. 24 hrs"/></div><div class="fg" style="flex:2"><label>Notes</label><input type="text" id="spray-notes" placeholder="conditions, equipment…"/></div></div><hr class="divider"/><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><h3>Products Used</h3><button class="btn btn-outline btn-sm" onclick="addSprayRow()">+ Add Product</button></div><div id="spray-rows"></div><div id="spray-empty" style="font-size:12px;color:var(--muted);padding:4px 0 10px;">No products added yet.</div><hr class="divider"/><button class="btn btn-red" id="spray-btn">🧪 Save Application</button></div><div id="spray-season-summary"></div><h2>History</h2><div id="sm-spray-log"></div>';
@@ -1239,17 +1247,17 @@ function addIrr(){
   if(ms<=0){ alert('End must be after start.'); return; }
   if(irrEditId){
     var existing = DB.irrigation.find(function(x){ return String(x.id)===String(irrEditId); });
-    if(existing){ existing.start=start; existing.end=end; existing.hours=parseFloat((ms/3600000).toFixed(2)); existing.source=g('irr-source'); existing.notes=g('irr-notes'); }
+    if(existing){ existing.start=start; existing.end=end; existing.hours=parseFloat((ms/3600000).toFixed(2)); existing.source=g('irr-source'); existing.notes=g('irr-notes'); existing.gpmShare=g('irr-share'); }
     irrEditId = null;
     var btn = document.getElementById('irr-btn');
     if(btn) btn.textContent = '💧 Log Session';
     var title = document.getElementById('irr-form-title');
     if(title) title.textContent = 'Log Irrigation Session';
   } else {
-    DB.irrigation.push({ id:Date.now(), fid:curField.id, sid:curSection.id, start:start, end:end, hours:parseFloat((ms/3600000).toFixed(2)), source:g('irr-source'), notes:g('irr-notes') });
+    DB.irrigation.push({ id:Date.now(), fid:curField.id, sid:curSection.id, start:start, end:end, hours:parseFloat((ms/3600000).toFixed(2)), source:g('irr-source'), notes:g('irr-notes'), gpmShare:g('irr-share') });
   }
   save();
-  ['irr-date','irr-start-t','irr-end-date','irr-end-t','irr-source','irr-notes','irr-edit-id'].forEach(function(x){ var el=document.getElementById(x); if(el) el.value=''; });
+  ['irr-date','irr-start-t','irr-end-date','irr-end-t','irr-source','irr-notes','irr-share','irr-edit-id'].forEach(function(x){ var el=document.getElementById(x); if(el) el.value=''; });
   renderIrrStats(curField.id, curSection.id);
   renderLog('irrigation', curField.id, curSection.id, 'sm-irr-log');
 }
@@ -1264,6 +1272,7 @@ function editIrr(id){
   document.getElementById('irr-end-date').value = endParts[0]||'';
   document.getElementById('irr-end-t').value = endParts[1]||'';
   document.getElementById('irr-source').value = entry.source||'';
+  document.getElementById('irr-share').value = entry.gpmShare||'';
   document.getElementById('irr-notes').value = entry.notes||'';
   var btn = document.getElementById('irr-btn');
   if(btn) btn.textContent = '💾 Update Session';
@@ -1874,11 +1883,10 @@ function renderIrrStats(fid,sid){
   }
   el.style.gridTemplateColumns = 'repeat(auto-fit,minmax(90px,1fr))';
   el.innerHTML='<div class="stat"><div class="stat-val bl">'+total+'</div><div class="stat-lab">Total Hours</div></div><div class="stat"><div class="stat-val bl">'+month+'</div><div class="stat-lab">This Month</div></div><div class="stat"><div class="stat-val bl">'+rows.length+'</div><div class="stat-lab">Sessions</div></div><div class="stat"><div class="stat-val bl">'+daysSince+'</div><div class="stat-lab">Days Since Last</div></div>';
-  // Accumulated water depth, based on this field's well GPM and this section's own area
-  var gpm = fieldWellGpm(fid);
+  // Accumulated water depth, based on this field's well GPM (weighted per-session by well share) and this section's own area
   var areaObj = getSectionAreaForIds(fid, sid);
-  if(gpm && areaObj){
-    var totalGallons = irrGallons(rows.reduce(function(s,r){ return s+r.hours; },0), gpm);
+  if(fieldWellGpm(fid) && areaObj){
+    var totalGallons = rows.reduce(function(s,r){ return s+sessionGallons(r); },0);
     var inches = irrInchesFromGallons(totalGallons, areaObj);
     el.innerHTML += '<div class="stat"><div class="stat-val bl">'+inches.toFixed(2)+'"</div><div class="stat-lab">Accum. Water Depth</div></div>';
   }
@@ -2904,7 +2912,7 @@ function renderLog(type, fid, sid, elId, global){
     html += '<div class="log '+cls+'">';
     html += '<div style="flex:1;">';
     if(global) html += '<strong>'+fN(r.fid)+'</strong> · '+sN(r.fid,r.sid)+' — ';
-    if(type==='irrigation') html += '<span class="badge bb">'+r.hours+' hrs</span><div class="log-meta">'+fmtDT(r.start)+' → '+fmtDT(r.end)+(r.source?' · '+r.source:'')+(r.notes?' · '+r.notes:'')+'</div>';
+    if(type==='irrigation') html += '<span class="badge bb">'+r.hours+' hrs</span>'+(r.gpmShare&&parseFloat(r.gpmShare)!==100?'<span class="badge bk" style="margin-left:4px;">'+r.gpmShare+'% of well</span>':'')+'<div class="log-meta">'+fmtDT(r.start)+' → '+fmtDT(r.end)+(r.source?' · '+r.source:'')+(r.notes?' · '+r.notes:'')+'</div>';
     else if(type==='pesticide'){ var pdosage=''; if(r.ratePerHa&&r.rateUnit){ pdosage='<span style="color:var(--leaf);font-weight:700;">'+r.ratePerHa+' '+r.rateUnit+'/'+(r.areaUnit||'ha')+'</span>'+(r.totalApplied?' ('+r.totalApplied+' '+r.rateUnit+' total)':''); } else { pdosage=r.amount||''; } html += '<strong>'+r.name+'</strong>'+(r.brand?' — '+r.brand:'')+'<span class="badge bp" style="margin-left:5px;">'+(r.type||'Pesticide')+'</span><div class="log-meta">'+(r.date?fmtD(r.date)+' · ':'')+pdosage+(r.notes?' · '+r.notes:'')+'</div>'; }
     else if(type==='spray'){
       var chems = r.chemicals || (r.name ? [{name:r.name,ai:r.ai,rate:r.rate}] : []);
@@ -3380,9 +3388,9 @@ function renderGlobal(id){
       if(!DB.fields.length){
         s.innerHTML = '<div class="empty"><div class="empty-icon">💧</div>No fields yet.</div>';
       } else {
-        var html = '<div class="card" style="border:2px solid var(--water);background:var(--waterlight);margin-bottom:12px;">';
-        html += '<h3 style="color:var(--water);margin-bottom:10px;">⚡ Electric Cost per Irrigation Hour — by Field</h3>';
-        html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+        var html = '<div class="card">';
+        html += '<h2 style="margin-bottom:10px;">⚡ Electric Cost per Irrigation Hour — by Field</h2>';
+        html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
         html += '<tr style="border-bottom:2px solid var(--water);"><th style="text-align:left;padding:4px;">Field</th><th style="text-align:right;padding:4px;">Total Bills</th><th style="text-align:right;padding:4px;">Irr. Hours</th><th style="text-align:right;padding:4px;">Cost/Hour</th><th style="text-align:right;padding:4px;">Cost/Inch</th></tr>';
         var sorted = smartSort(DB.fields);
         sorted.forEach(function(f){
@@ -3409,11 +3417,14 @@ function renderGlobal(id){
             costPerHr = '<span style="color:var(--muted);">—</span>';
           }
           // Cost per inch — needs well GPM + field area to convert hours into water depth
+          // (weighted per-session by well-share, in case sections split the well)
           var costPerInch = '<span style="color:var(--muted);">—</span>';
           var gpm = fieldWellGpm(f.id);
           var areaObj = fieldAreaObj(f.id);
           if(gpm && areaObj && totalHrs>0){
-            var totalInches = irrInchesFromGallons(irrGallons(totalHrs, gpm), areaObj);
+            var fieldRows = DB.irrigation.filter(function(r){ return String(r.fid)===String(f.id); });
+            var totalGallons = fieldRows.reduce(function(s,r){ return s+sessionGallons(r); },0);
+            var totalInches = irrInchesFromGallons(totalGallons, areaObj);
             if(totalInches>0){
               if(billsMXN>0) costPerInch = fmtCur(billsMXN/totalInches,'MXN')+'/in';
               else if(billsUSD>0) costPerInch = fmtCur(billsUSD/totalInches,'USD')+'/in';
@@ -3429,7 +3440,7 @@ function renderGlobal(id){
           html += '<td style="text-align:right;padding:5px 4px;color:var(--danger);font-weight:700;">'+costPerInch+'</td>';
           html += '</tr>';
         });
-        html += '</table></div>';
+        html += '</table></div></div>';
         s.innerHTML = html;
       }
     }
