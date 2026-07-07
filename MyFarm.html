@@ -397,6 +397,13 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
         <div class="fg"><label>Receipt #</label><input type="text" id="purch-ref" placeholder="e.g. 162405"/></div>
         <div class="fg"><label>Currency</label><select id="purch-cur"><option value="MXN">MXN $</option><option value="USD">USD $</option></select></div>
       </div>
+      <div class="form-row">
+        <div class="fg" style="flex:2">
+          <label>Receipt Photo</label>
+          <input type="file" id="purch-photo" accept="image/*" capture="environment" onchange="handlePurchPhoto(this)"/>
+          <div id="purch-photo-preview"></div>
+        </div>
+      </div>
       <hr class="divider"/>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
         <h3>Items Purchased</h3>
@@ -487,6 +494,16 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 </main>
 
 
+
+<!-- RECEIPT PHOTO VIEWER MODAL -->
+<div class="modal-bg" id="photo-modal">
+  <div class="modal" style="max-width:95vw;padding:10px;">
+    <img id="photo-modal-img" style="width:100%;border-radius:8px;display:block;"/>
+    <div style="text-align:right;margin-top:10px;">
+      <button class="btn btn-outline" onclick="closeModal('photo-modal')">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- FIELD MODAL -->
 <div class="modal-bg" id="field-modal">
@@ -2216,6 +2233,61 @@ function imageToBase64(file, callback){
   reader.readAsDataURL(file);
 }
 
+// Resize + re-encode an image file down to a small JPEG dataURL, so receipt photos
+// don't blow up localStorage (which has a hard ~5-10MB cap).
+function compressImage(file, maxDim, quality, callback){
+  var reader = new FileReader();
+  reader.onload = function(e){
+    var img = new Image();
+    img.onload = function(){
+      var w = img.width, h = img.height;
+      if(w>maxDim || h>maxDim){
+        if(w>h){ h = Math.round(h*maxDim/w); w = maxDim; }
+        else { w = Math.round(w*maxDim/h); h = maxDim; }
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      callback(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = function(){ callback(null); };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ═══ PURCHASE RECEIPT PHOTO (attach a photo of the physical receipt to a purchase) ═══
+var purchPhotoData = null;
+function handlePurchPhoto(input){
+  var file = input.files[0]; if(!file) return;
+  compressImage(file, 1000, 0.7, function(dataUrl){
+    if(!dataUrl){ alert('Could not read that photo. Try again.'); return; }
+    purchPhotoData = dataUrl;
+    renderPurchPhotoPreview();
+  });
+}
+function removePurchPhoto(){
+  purchPhotoData = null;
+  var input = document.getElementById('purch-photo');
+  if(input) input.value = '';
+  renderPurchPhotoPreview();
+}
+function renderPurchPhotoPreview(){
+  var el = document.getElementById('purch-photo-preview');
+  if(!el) return;
+  if(purchPhotoData){
+    el.innerHTML = '<div style="position:relative;display:inline-block;margin-top:6px;"><img src="'+purchPhotoData+'" style="max-width:110px;max-height:110px;border-radius:8px;border:1px solid var(--border);display:block;"/><button type="button" onclick="removePurchPhoto()" style="position:absolute;top:-6px;right:-6px;background:var(--danger);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:12px;line-height:22px;text-align:center;padding:0;cursor:pointer;">✕</button></div>';
+  } else {
+    el.innerHTML = '';
+  }
+}
+function viewPhoto(id){
+  var p = DB.purchases.find(function(x){ return String(x.id)===String(id); });
+  if(!p || !p.receiptPhoto) return;
+  document.getElementById('photo-modal-img').src = p.receiptPhoto;
+  openModal('photo-modal');
+}
+
 async function callClaudeVision(base64, mediaType, prompt){
   var response = await fetch('/api/scan', {
     method:'POST',
@@ -2454,7 +2526,7 @@ function addPurchase(){
   var editId = g('purch-edit-id');
   var tax = parseFloat(g('purch-tax'))||0;
   var grandTotal = (parseFloat(g('purch-total'))||0)+tax;
-  var entry = { date:date, supplier:supplier, ref:g('purch-ref'), currency:g('purch-cur'), total:g('purch-total'), tax:tax>0?tax.toFixed(2):'', grandTotal:grandTotal.toFixed(2), items:items, notes:g('purch-notes') };
+  var entry = { date:date, supplier:supplier, ref:g('purch-ref'), currency:g('purch-cur'), total:g('purch-total'), tax:tax>0?tax.toFixed(2):'', grandTotal:grandTotal.toFixed(2), items:items, notes:g('purch-notes'), receiptPhoto:purchPhotoData };
   if(editId){
     var ex = DB.purchases.find(function(x){ return String(x.id)===String(editId); });
     if(ex) Object.assign(ex, entry);
@@ -2490,6 +2562,7 @@ function addPurchase(){
   });
   if(newProds>0){ save(); showToast('✅ '+newProds+' new product'+(newProds!==1?'s':'')+' added to catalog'); }
   ['purch-date','purch-supplier','purch-ref','purch-total','purch-tax','purch-tax-pct','purch-grand-total','purch-notes','purch-edit-id'].forEach(function(x){ var e=document.getElementById(x); if(e) e.value=''; });
+  removePurchPhoto();
   document.getElementById('purch-items').innerHTML='';
   document.getElementById('purch-items-empty').style.display='block';
   document.getElementById('purch-form-title').textContent='Log Purchase';
@@ -2543,6 +2616,10 @@ function editPurchase(id){
   document.getElementById('purch-ref').value = p.ref||'';
   document.getElementById('purch-cur').value = p.currency||'MXN';
   document.getElementById('purch-notes').value = p.notes||'';
+  purchPhotoData = p.receiptPhoto || null;
+  var photoInput = document.getElementById('purch-photo');
+  if(photoInput) photoInput.value = '';
+  renderPurchPhotoPreview();
   // Clear items
   document.getElementById('purch-items').innerHTML='';
   purchItems=[];
@@ -2568,6 +2645,15 @@ function deletePurchase(id){
   if(!p||!confirm('Delete this purchase from '+p.supplier+'?')) return;
   DB.purchases = DB.purchases.filter(function(x){ return String(x.id)!==String(id); });
   save(); renderPurchases();
+}
+
+function togglePurchasePaid(id){
+  var p = DB.purchases.find(function(x){ return String(x.id)===String(id); });
+  if(!p) return;
+  p.paid = !p.paid;
+  p.paidDate = p.paid ? new Date().toISOString().split('T')[0] : '';
+  save();
+  renderPurchases();
 }
 
 function calcPurchGrandTotal(){
@@ -2631,13 +2717,21 @@ function updateCombinedTotals(rate){
   var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
   var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
 
-  // Calculate total accumulated interest across all overdue purchases
+  // Paid vs unpaid split
+  var paidMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'&&p.paid; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
+  var paidUSD = DB.purchases.filter(function(p){ return p.currency==='USD'&&p.paid; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
+  var paidCount = DB.purchases.filter(function(p){ return p.paid; }).length;
+  var unpaidMXN = totalMXN - paidMXN;
+  var unpaidUSD = totalUSD - paidUSD;
+
+  // Calculate total accumulated interest across all overdue, UNPAID purchases (interest freezes once marked paid)
   var DAILY_RATE = 0.15/365;
   var GRACE_DAYS = 60;
   var today = new Date();
   var todayMid = new Date(today.getFullYear(),today.getMonth(),today.getDate());
   var interestMXN = 0, interestUSD = 0, overdueCount = 0;
   DB.purchases.forEach(function(p){
+    if(p.paid) return;
     var grandTotal = parseFloat(p.grandTotal||p.total)||0;
     if(!grandTotal||!p.date) return;
     var pd = new Date(p.date+'T00:00:00');
@@ -2653,6 +2747,8 @@ function updateCombinedTotals(rate){
   });
   var totalInterestMXN = interestMXN;
   var totalInterestUSD = interestUSD;
+  var oweMXN = unpaidMXN + totalInterestMXN;
+  var oweUSD = unpaidUSD + totalInterestUSD;
 
   var allInMXN = rate>0 ? totalMXN + totalUSD*rate : null;
   var allInUSD = rate>0 ? totalUSD + totalMXN/rate : null;
@@ -2677,20 +2773,27 @@ function updateCombinedTotals(rate){
       '<div style="font-size:12px;color:var(--muted);">Enter rate above to see combined totals</div>'
     ) +
     '</div>' +
+    // Paid card
+    '<div class="card" style="border:1.5px solid var(--leaf);background:var(--leaflight);margin-bottom:10px;">' +
+    '<h3 style="color:var(--leaf);margin-bottom:8px;">✅ Paid</h3>' +
+    '<p style="font-size:12px;color:var(--muted);margin-bottom:10px;">'+paidCount+' receipt'+(paidCount!==1?'s':'')+' marked paid — no interest accrues on these</p>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+    '<div class="stat"><div class="stat-val" style="color:var(--leaf);font-size:18px;">'+fmtCur(paidMXN,'MXN')+'</div><div class="stat-lab">Paid (MXN)</div></div>' +
+    '<div class="stat"><div class="stat-val" style="color:var(--leaf);font-size:18px;">'+fmtCur(paidUSD,'USD')+'</div><div class="stat-lab">Paid (USD)</div></div>' +
+    '</div>' +
+    '</div>' +
     // Interest card
     '<div class="card" style="border:2px solid var(--danger);">' +
     '<h3 style="color:var(--danger);margin-bottom:8px;">⚠️ Accumulated Interest</h3>' +
-    '<p style="font-size:12px;color:var(--muted);margin-bottom:10px;">15% p.a. · accruing daily after 60-day grace period · '+overdueCount+' receipt'+(overdueCount!==1?'s':'')+' overdue</p>' +
+    '<p style="font-size:12px;color:var(--muted);margin-bottom:10px;">15% p.a. · accruing daily after 60-day grace period · '+overdueCount+' unpaid receipt'+(overdueCount!==1?'s':'')+' overdue</p>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
     '<div class="stat"><div class="stat-val" style="color:var(--danger);font-size:18px;">'+fmtCur(totalInterestMXN,'MXN')+'</div><div class="stat-lab">Interest (MXN)</div></div>' +
     '<div class="stat"><div class="stat-val" style="color:var(--danger);font-size:18px;">'+fmtCur(totalInterestUSD,'USD')+'</div><div class="stat-lab">Interest (USD)</div></div>' +
     '</div>' +
-    (overdueCount>0 && (totalInterestMXN+totalInterestUSD)>0 ?
-      '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
-      '<div class="stat"><div class="stat-val" style="color:var(--danger);font-size:15px;">'+fmtCur(totalMXN+totalInterestMXN,'MXN')+'</div><div class="stat-lab">MXN Total + Interest</div></div>' +
-      '<div class="stat"><div class="stat-val" style="color:var(--danger);font-size:15px;">'+fmtCur(totalUSD+totalInterestUSD,'USD')+'</div><div class="stat-lab">USD Total + Interest</div></div>' +
-      '</div>' : ''
-    ) +
+    '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+    '<div class="stat"><div class="stat-val" style="color:var(--danger);font-size:15px;">'+fmtCur(oweMXN,'MXN')+'</div><div class="stat-lab">Still Owe (MXN)</div></div>' +
+    '<div class="stat"><div class="stat-val" style="color:var(--danger);font-size:15px;">'+fmtCur(oweUSD,'USD')+'</div><div class="stat-lab">Still Owe (USD)</div></div>' +
+    '</div>' +
     '</div>';
 }
 function updateExchSummary(){}
@@ -2839,12 +2942,14 @@ function renderPurchases(){
     var purchMidnight = purchDate ? new Date(purchDate.getFullYear(), purchDate.getMonth(), purchDate.getDate()) : null;
     var daysSince = purchMidnight ? Math.floor((todayMidnight - purchMidnight) / 86400000) : 0;
     var daysOverdue = Math.max(0, daysSince - GRACE_DAYS);
-    var interestAmt = daysOverdue > 0 ? grandTotal * DAILY_RATE * daysOverdue : 0;
+    var interestAmt = (!p.paid && daysOverdue > 0) ? grandTotal * DAILY_RATE * daysOverdue : 0;
     var totalWithInterest = grandTotal + interestAmt;
-    var isOverdue = daysOverdue > 0;
+    var isOverdue = !p.paid && daysOverdue > 0;
 
-    // Orange border if overdue/carrying interest
-    var cardStyle = isOverdue
+    // Green border if paid, orange if overdue/carrying interest
+    var cardStyle = p.paid
+      ? 'border-color:var(--leaf);background:var(--leaflight);'
+      : isOverdue
       ? 'border-color:#E67E22;background:#FEF5E7;border-width:2px;'
       : 'border-color:var(--harvest);background:var(--harvestlight);';
 
@@ -2854,8 +2959,12 @@ function renderPurchases(){
     html += '<span class="badge bo" style="margin-left:5px;">'+fmtCur(grandTotal,p.currency)+'</span>';
     if(tax>0) html += '<span class="badge bk" style="margin-left:4px;">Tax: '+fmtCur(tax,p.currency)+'</span>';
 
-    // Interest badge
-    if(isOverdue){
+    // Paid / interest badge
+    if(p.paid){
+      html += '<div style="margin-top:5px;padding:5px 8px;background:var(--leaf);border-radius:6px;display:inline-block;">';
+      html += '<span style="color:#fff;font-size:12px;font-weight:700;">✅ Paid'+(p.paidDate?' · '+fmtD(p.paidDate):'')+'</span>';
+      html += '</div>';
+    } else if(isOverdue){
       html += '<div style="margin-top:5px;padding:5px 8px;background:#E67E22;border-radius:6px;display:inline-block;">';
       html += '<span style="color:#fff;font-size:12px;font-weight:700;">⚠️ '+daysOverdue+' days overdue · Interest: '+fmtCur(interestAmt,p.currency)+'</span><br>';
       html += '<span style="color:#fff;font-size:12px;">Total with interest: '+fmtCur(totalWithInterest,p.currency)+' (15% p.a.)</span>';
@@ -2867,6 +2976,7 @@ function renderPurchases(){
     }
 
     html += '<div class="log-meta">📅 '+fmtD(p.date)+' · '+daysSince+' days ago'+(p.notes?' · '+p.notes:'')+'</div>';
+    if(p.receiptPhoto) html += '<div style="margin-top:6px;"><img src="'+p.receiptPhoto+'" onclick="viewPhoto(\''+p.id+'\')" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;"/></div>';
 
     if(p.items&&p.items.length){
       p.items.forEach(function(item){
@@ -2881,7 +2991,7 @@ function renderPurchases(){
         html += '</div>';
       });
     }
-    html += '</div><div style="display:flex;gap:6px;flex-shrink:0;"><button class="btn btn-edit btn-sm" onclick="editPurchase(\''+p.id+'\')">✏️</button><button class="log-del" onclick="deletePurchase(\''+p.id+'\')">✕</button></div></div>';
+    html += '</div><div style="display:flex;gap:6px;flex-shrink:0;"><button class="btn btn-sm" style="background:'+(p.paid?'var(--muted)':'var(--leaf)')+';color:#fff;" onclick="togglePurchasePaid(\''+p.id+'\')">'+(p.paid?'↩️':'✅')+'</button><button class="btn btn-edit btn-sm" onclick="editPurchase(\''+p.id+'\')">✏️</button><button class="log-del" onclick="deletePurchase(\''+p.id+'\')">✕</button></div></div>';
   });
   el.innerHTML = html;
 }
