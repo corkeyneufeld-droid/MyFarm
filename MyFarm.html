@@ -495,6 +495,21 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
 
 
 
+<!-- MARK AS PAID MODAL -->
+<div class="modal-bg" id="paid-modal">
+  <div class="modal">
+    <h2 id="paid-modal-title">💰 Mark as Paid</h2>
+    <input type="hidden" id="paid-modal-id"/>
+    <div class="form-row"><div class="fg"><label>Payment Date</label><input type="date" id="paid-modal-date" onchange="updatePaidModalPreview()"/></div></div>
+    <div id="paid-modal-preview" style="margin-bottom:14px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-green" style="flex:1;" onclick="confirmMarkPaid()">✅ Confirm Paid</button>
+      <button class="btn btn-outline" style="flex:1;" onclick="closeModal('paid-modal')">Cancel</button>
+    </div>
+    <button class="btn btn-outline" id="paid-modal-undo" style="width:100%;margin-top:8px;color:var(--danger);border-color:var(--danger);display:none;" onclick="undoMarkPaid()">↩️ Mark as Unpaid</button>
+  </div>
+</div>
+
 <!-- RECEIPT PHOTO VIEWER MODAL -->
 <div class="modal-bg" id="photo-modal">
   <div class="modal" style="max-width:95vw;padding:10px;">
@@ -2640,6 +2655,28 @@ function editPurchase(id){
   document.getElementById('purch-form-title').scrollIntoView({behavior:'smooth',block:'center'});
 }
 
+// ═══ INTEREST (15% p.a., simple interest, starting day 61) ═══
+var INT_ANNUAL_RATE = 0.15;
+var INT_DAILY_RATE = INT_ANNUAL_RATE / 365;
+var INT_GRACE_DAYS = 60;
+function daysBetween(d1Str, d2Str){
+  var d1 = new Date(d1Str+'T00:00:00');
+  var d2 = d2Str ? new Date(d2Str+'T00:00:00') : new Date();
+  var d1Mid = new Date(d1.getFullYear(),d1.getMonth(),d1.getDate());
+  var d2Mid = new Date(d2.getFullYear(),d2.getMonth(),d2.getDate());
+  return Math.floor((d2Mid-d1Mid)/86400000);
+}
+// Interest owed on a purchase as of a given date (defaults to today) — simple interest,
+// 15% p.a., accruing daily on the original principal only, starting after the 60-day grace period.
+function purchaseInterestAsOf(p, asOfDate){
+  var grandTotal = parseFloat(p.grandTotal||p.total)||0;
+  if(!grandTotal || !p.date) return 0;
+  var daysSince = daysBetween(p.date, asOfDate);
+  var daysOver = Math.max(0, daysSince - INT_GRACE_DAYS);
+  if(daysOver<=0) return 0;
+  return grandTotal * INT_DAILY_RATE * daysOver;
+}
+
 function deletePurchase(id){
   var p = DB.purchases.find(function(x){ return String(x.id)===String(id); });
   if(!p||!confirm('Delete this purchase from '+p.supplier+'?')) return;
@@ -2647,12 +2684,65 @@ function deletePurchase(id){
   save(); renderPurchases();
 }
 
-function togglePurchasePaid(id){
+// ═══ MARK AS PAID (long-press a receipt) ═══
+var longPressTimer = null;
+var longPressFired = false;
+function startLongPress(id){
+  longPressFired = false;
+  longPressTimer = setTimeout(function(){ longPressFired = true; openPaidModal(id); }, 550);
+}
+function cancelLongPress(){
+  if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; }
+}
+function openPaidModal(id){
   var p = DB.purchases.find(function(x){ return String(x.id)===String(id); });
   if(!p) return;
-  p.paid = !p.paid;
-  p.paidDate = p.paid ? new Date().toISOString().split('T')[0] : '';
+  document.getElementById('paid-modal-id').value = id;
+  document.getElementById('paid-modal-title').textContent = p.paid ? '💰 Update Payment' : '💰 Mark as Paid';
+  document.getElementById('paid-modal-date').value = p.paidDate || new Date().toISOString().split('T')[0];
+  document.getElementById('paid-modal-undo').style.display = p.paid ? '' : 'none';
+  updatePaidModalPreview();
+  openModal('paid-modal');
+}
+function updatePaidModalPreview(){
+  var id = document.getElementById('paid-modal-id').value;
+  var p = DB.purchases.find(function(x){ return String(x.id)===String(id); });
+  var payDate = document.getElementById('paid-modal-date').value;
+  var el = document.getElementById('paid-modal-preview');
+  if(!p || !payDate){ el.innerHTML=''; return; }
+  var grandTotal = parseFloat(p.grandTotal||p.total)||0;
+  var interest = purchaseInterestAsOf(p, payDate);
+  var totalPaid = grandTotal + interest;
+  el.innerHTML = '<div style="font-size:13px;line-height:1.7;">'+
+    'Original receipt: <strong>'+fmtCur(grandTotal,p.currency)+'</strong><br>'+
+    (interest>0 ? 'Interest accrued by this date: <strong style="color:var(--danger);">'+fmtCur(interest,p.currency)+'</strong><br>' : '')+
+    '<span style="font-size:15px;">Total to mark paid: <strong style="color:var(--leaf);">'+fmtCur(totalPaid,p.currency)+'</strong></span>'+
+    '</div>';
+}
+function confirmMarkPaid(){
+  var id = document.getElementById('paid-modal-id').value;
+  var p = DB.purchases.find(function(x){ return String(x.id)===String(id); });
+  if(!p) return;
+  var payDate = document.getElementById('paid-modal-date').value;
+  if(!payDate){ alert('Pick the date you made the payment.'); return; }
+  var grandTotal = parseFloat(p.grandTotal||p.total)||0;
+  var interest = purchaseInterestAsOf(p, payDate);
+  p.paid = true;
+  p.paidDate = payDate;
+  p.paidAmount = (grandTotal+interest).toFixed(2);
   save();
+  closeModal('paid-modal');
+  renderPurchases();
+}
+function undoMarkPaid(){
+  var id = document.getElementById('paid-modal-id').value;
+  var p = DB.purchases.find(function(x){ return String(x.id)===String(id); });
+  if(!p) return;
+  p.paid = false;
+  p.paidDate = '';
+  p.paidAmount = '';
+  save();
+  closeModal('paid-modal');
   renderPurchases();
 }
 
@@ -2717,29 +2807,22 @@ function updateCombinedTotals(rate){
   var totalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
   var totalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
 
-  // Paid vs unpaid split
-  var paidMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'&&p.paid; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
-  var paidUSD = DB.purchases.filter(function(p){ return p.currency==='USD'&&p.paid; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
+  // Paid vs unpaid split. "Paid" totals include whatever interest had accrued as of the payment date.
+  var paidPrincipalMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'&&p.paid; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
+  var paidPrincipalUSD = DB.purchases.filter(function(p){ return p.currency==='USD'&&p.paid; }).reduce(function(s,p){ return s+(parseFloat(p.grandTotal||p.total)||0); },0);
+  var paidMXN = DB.purchases.filter(function(p){ return p.currency==='MXN'&&p.paid; }).reduce(function(s,p){ return s+(parseFloat(p.paidAmount)||parseFloat(p.grandTotal||p.total)||0); },0);
+  var paidUSD = DB.purchases.filter(function(p){ return p.currency==='USD'&&p.paid; }).reduce(function(s,p){ return s+(parseFloat(p.paidAmount)||parseFloat(p.grandTotal||p.total)||0); },0);
   var paidCount = DB.purchases.filter(function(p){ return p.paid; }).length;
-  var unpaidMXN = totalMXN - paidMXN;
-  var unpaidUSD = totalUSD - paidUSD;
+  var unpaidMXN = totalMXN - paidPrincipalMXN;
+  var unpaidUSD = totalUSD - paidPrincipalUSD;
 
-  // Calculate total accumulated interest across all overdue, UNPAID purchases (interest freezes once marked paid)
-  var DAILY_RATE = 0.15/365;
-  var GRACE_DAYS = 60;
-  var today = new Date();
-  var todayMid = new Date(today.getFullYear(),today.getMonth(),today.getDate());
+  // Accumulated interest across all overdue, UNPAID purchases — compounds daily on the growing
+  // balance (principal + interest already accrued), and freezes once a receipt is marked paid.
   var interestMXN = 0, interestUSD = 0, overdueCount = 0;
   DB.purchases.forEach(function(p){
     if(p.paid) return;
-    var grandTotal = parseFloat(p.grandTotal||p.total)||0;
-    if(!grandTotal||!p.date) return;
-    var pd = new Date(p.date+'T00:00:00');
-    var pdMid = new Date(pd.getFullYear(),pd.getMonth(),pd.getDate());
-    var days = Math.floor((todayMid-pdMid)/86400000);
-    var daysOver = Math.max(0, days-GRACE_DAYS);
-    if(daysOver>0){
-      var interest = grandTotal*DAILY_RATE*daysOver;
+    var interest = purchaseInterestAsOf(p, null);
+    if(interest>0){
       if(p.currency==='MXN') interestMXN+=interest;
       else interestUSD+=interest;
       overdueCount++;
@@ -2932,19 +3015,12 @@ function renderPurchases(){
     var grandTotal = parseFloat(p.grandTotal||p.total)||0;
     var tax = parseFloat(p.tax)||0;
 
-    // Interest calculation — 15% annually, starts day 61
-    var ANNUAL_RATE = 0.15;
-    var DAILY_RATE = ANNUAL_RATE / 365;
-    var GRACE_DAYS = 60;
-    var today = new Date();
-    var purchDate = p.date ? new Date(p.date+'T00:00:00') : null;
-    var todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    var purchMidnight = purchDate ? new Date(purchDate.getFullYear(), purchDate.getMonth(), purchDate.getDate()) : null;
-    var daysSince = purchMidnight ? Math.floor((todayMidnight - purchMidnight) / 86400000) : 0;
-    var daysOverdue = Math.max(0, daysSince - GRACE_DAYS);
-    var interestAmt = (!p.paid && daysOverdue > 0) ? grandTotal * DAILY_RATE * daysOverdue : 0;
+    var daysSince = p.date ? daysBetween(p.date, null) : 0;
+    var daysOverdue = Math.max(0, daysSince - INT_GRACE_DAYS);
+    var interestAmt = (!p.paid) ? purchaseInterestAsOf(p, null) : 0;
     var totalWithInterest = grandTotal + interestAmt;
     var isOverdue = !p.paid && daysOverdue > 0;
+    var paidAmount = p.paidAmount ? parseFloat(p.paidAmount) : grandTotal;
 
     // Green border if paid, orange if overdue/carrying interest
     var cardStyle = p.paid
@@ -2953,7 +3029,7 @@ function renderPurchases(){
       ? 'border-color:#E67E22;background:#FEF5E7;border-width:2px;'
       : 'border-color:var(--harvest);background:var(--harvestlight);';
 
-    html += '<div class="log" style="'+cardStyle+'">';
+    html += '<div class="log" style="'+cardStyle+'" onmousedown="startLongPress(\''+p.id+'\')" onmouseup="cancelLongPress()" onmouseleave="cancelLongPress()" ontouchstart="startLongPress(\''+p.id+'\')" ontouchend="cancelLongPress()" ontouchmove="cancelLongPress()" oncontextmenu="return false;">';
     html += '<div style="flex:1;">';
     html += '<strong>'+(p.supplier||'')+'</strong>'+(p.ref?' <span class="badge bk">Ref# '+p.ref+'</span>':'');
     html += '<span class="badge bo" style="margin-left:5px;">'+fmtCur(grandTotal,p.currency)+'</span>';
@@ -2962,7 +3038,7 @@ function renderPurchases(){
     // Paid / interest badge
     if(p.paid){
       html += '<div style="margin-top:5px;padding:5px 8px;background:var(--leaf);border-radius:6px;display:inline-block;">';
-      html += '<span style="color:#fff;font-size:12px;font-weight:700;">✅ Paid'+(p.paidDate?' · '+fmtD(p.paidDate):'')+'</span>';
+      html += '<span style="color:#fff;font-size:12px;font-weight:700;">✅ Paid '+fmtCur(paidAmount,p.currency)+(p.paidDate?' · '+fmtD(p.paidDate):'')+'</span>';
       html += '</div>';
     } else if(isOverdue){
       html += '<div style="margin-top:5px;padding:5px 8px;background:#E67E22;border-radius:6px;display:inline-block;">';
@@ -2971,12 +3047,13 @@ function renderPurchases(){
       html += '</div>';
     } else if(daysSince >= 45){
       // Warning when approaching 60-day threshold
-      var daysLeft = GRACE_DAYS - daysSince;
+      var daysLeft = INT_GRACE_DAYS - daysSince;
       html += '<span class="badge" style="background:#FEF9C3;color:#92400E;margin-left:4px;font-size:11px;">⏳ Interest starts in '+daysLeft+' days</span>';
     }
+    if(!p.paid) html += '<div style="font-size:11px;color:var(--muted);margin-top:4px;">👆 Long-press to mark paid</div>';
 
     html += '<div class="log-meta">📅 '+fmtD(p.date)+' · '+daysSince+' days ago'+(p.notes?' · '+p.notes:'')+'</div>';
-    if(p.receiptPhoto) html += '<div style="margin-top:6px;"><img src="'+p.receiptPhoto+'" onclick="viewPhoto(\''+p.id+'\')" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;"/></div>';
+    if(p.receiptPhoto) html += '<div style="margin-top:6px;"><img src="'+p.receiptPhoto+'" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="viewPhoto(\''+p.id+'\')" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;"/></div>';
 
     if(p.items&&p.items.length){
       p.items.forEach(function(item){
@@ -2991,7 +3068,7 @@ function renderPurchases(){
         html += '</div>';
       });
     }
-    html += '</div><div style="display:flex;gap:6px;flex-shrink:0;"><button class="btn btn-sm" style="background:'+(p.paid?'var(--muted)':'var(--leaf)')+';color:#fff;" onclick="togglePurchasePaid(\''+p.id+'\')">'+(p.paid?'↩️':'✅')+'</button><button class="btn btn-edit btn-sm" onclick="editPurchase(\''+p.id+'\')">✏️</button><button class="log-del" onclick="deletePurchase(\''+p.id+'\')">✕</button></div></div>';
+    html += '</div><div style="display:flex;gap:6px;flex-shrink:0;"><button class="btn btn-edit btn-sm" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="editPurchase(\''+p.id+'\')">✏️</button><button class="log-del" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="deletePurchase(\''+p.id+'\')">✕</button></div></div>';
   });
   el.innerHTML = html;
 }
