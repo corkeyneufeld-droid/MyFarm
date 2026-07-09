@@ -683,12 +683,8 @@ function getSectionAreaForIds(fid, sid){
   return { num:num, unit:parts[1]||'ha' };
 }
 // ═══ WELL / IRRIGATION DEPTH MATH ═══
-var GAL_PER_ACRE_INCH = 27154; // gallons of water to cover 1 acre, 1 inch deep
-var ACRES_PER_HA = 2.47105;
-function areaToAcres(num, unit){
-  if(!num) return 0;
-  return unit==='ha' ? num*ACRES_PER_HA : num;
-}
+var GAL_PER_ACRE_INCH = 27154;     // gallons of water to cover 1 acre, 1 inch deep
+var GAL_PER_HA_INCH = 67070.38;    // gallons of water to cover 1 hectare, 1 inch deep
 function fieldWellGpm(fid){
   var f = DB.fields.find(function(x){ return String(x.id)===String(fid); });
   return f && f.wellGpm ? parseFloat(f.wellGpm)||0 : 0;
@@ -705,9 +701,9 @@ function sessionGallons(row){
 // Depth in inches applied, given gallons pumped and the area (as {num,unit}) it was spread over
 function irrInchesFromGallons(gallons, areaObj){
   if(!areaObj || !areaObj.num) return 0;
-  var acres = areaToAcres(areaObj.num, areaObj.unit);
-  if(!acres) return 0;
-  return gallons/(GAL_PER_ACRE_INCH*acres);
+  var galPerInch = areaObj.unit==='ha' ? (GAL_PER_HA_INCH*areaObj.num) : (GAL_PER_ACRE_INCH*areaObj.num);
+  if(!galPerInch) return 0;
+  return gallons/galPerInch;
 }
 function fieldAreaObj(fid){
   var f = DB.fields.find(function(x){ return String(x.id)===String(fid); });
@@ -1934,10 +1930,13 @@ function renderIrrStats(fid,sid){
   // so check per-row (via sessionGallons) rather than assuming this field's own well was used.
   var areaObj = getSectionAreaForIds(fid, sid);
   var anyWellData = rows.some(function(r){ return fieldWellGpm(r.wellFieldId||r.fid) > 0; });
-  if(anyWellData && areaObj){
+  if(anyWellData){
     var totalGallons = rows.reduce(function(s,r){ return s+sessionGallons(r); },0);
-    var inches = irrInchesFromGallons(totalGallons, areaObj);
-    el.innerHTML += '<div class="stat"><div class="stat-val bl">'+inches.toFixed(2)+'"</div><div class="stat-lab">Accum. Water Depth</div></div>';
+    el.innerHTML += '<div class="stat"><div class="stat-val bl">'+Math.round(totalGallons).toLocaleString()+'</div><div class="stat-lab">Gallons Pumped</div></div>';
+    if(areaObj){
+      var inches = irrInchesFromGallons(totalGallons, areaObj);
+      el.innerHTML += '<div class="stat"><div class="stat-val bl">'+inches.toFixed(2)+'"</div><div class="stat-lab">Accum. Water Depth</div></div>';
+    }
   }
 }
 
@@ -3630,9 +3629,10 @@ function renderGlobal(id){
           var areaObj = fieldAreaObj(f.id);
           var fieldRows = DB.irrigation.filter(function(r){ return String(r.fid)===String(f.id); });
           var anyWellData = fieldRows.some(function(r){ return fieldWellGpm(r.wellFieldId||r.fid) > 0; });
+          var totalGallons = anyWellData ? fieldRows.reduce(function(s,r){ return s+sessionGallons(r); },0) : 0;
+          var totalInches = 0;
           if(anyWellData && areaObj && totalHrs>0){
-            var totalGallons = fieldRows.reduce(function(s,r){ return s+sessionGallons(r); },0);
-            var totalInches = irrInchesFromGallons(totalGallons, areaObj);
+            totalInches = irrInchesFromGallons(totalGallons, areaObj);
             if(totalInches>0){
               if(billsMXN>0) costPerInch = fmtCur(billsMXN/totalInches,'MXN')+'/in';
               else if(billsUSD>0) costPerInch = fmtCur(billsUSD/totalInches,'USD')+'/in';
@@ -3647,6 +3647,10 @@ function renderGlobal(id){
           html += '<div class="stat"><div class="stat-val bl" style="font-size:15px;">'+(totalHrs?totalHrs.toFixed(1)+' hrs':'—')+'</div><div class="stat-lab">Irr. Hours</div></div>';
           html += '<div class="stat"><div class="stat-val or" style="font-size:15px;">'+costPerHr+'</div><div class="stat-lab">Cost/Hour</div></div>';
           html += '<div class="stat"><div class="stat-val or" style="font-size:15px;">'+costPerInch+'</div><div class="stat-lab">Cost/Inch</div></div>';
+          if(anyWellData){
+            html += '<div class="stat"><div class="stat-val bl" style="font-size:15px;">'+Math.round(totalGallons).toLocaleString()+' gal</div><div class="stat-lab">Total Pumped</div></div>';
+            html += '<div class="stat"><div class="stat-val bl" style="font-size:15px;">'+(totalInches?totalInches.toFixed(2)+'"':'—')+'</div><div class="stat-lab">Water Depth</div></div>';
+          }
           html += '</div></div>';
         });
         html += '</div>';
