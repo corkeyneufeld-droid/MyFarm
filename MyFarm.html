@@ -685,6 +685,9 @@ function getSectionAreaForIds(fid, sid){
 // ═══ WELL / IRRIGATION DEPTH MATH ═══
 var GAL_PER_ACRE_INCH = 27154;     // gallons of water to cover 1 acre, 1 inch deep
 var GAL_PER_HA_INCH = 67070.38;    // gallons of water to cover 1 hectare, 1 inch deep
+// Size-independent unit: "how many hectares, 1 inch deep, could this water cover" —
+// useful for comparing cost efficiency across fields of different sizes.
+function haInchesFromGallons(gallons){ return (parseFloat(gallons)||0) / GAL_PER_HA_INCH; }
 function fieldWellGpm(fid){
   var f = DB.fields.find(function(x){ return String(x.id)===String(fid); });
   return f && f.wellGpm ? parseFloat(f.wellGpm)||0 : 0;
@@ -917,8 +920,9 @@ function renderFields(){
       if(!rows.length) return 'none';
       var lastEnd = rows.reduce(function(l,r){ return (!l||new Date(r.end)>new Date(l))?r.end:l; }, null);
       var days = Math.floor((now-new Date(lastEnd))/86400000);
-      if(days>=10) return 'red';
-      if(days>=7) return 'orange';
+      var th = irrigationThresholds(s.crop);
+      if(days>=th.red) return 'red';
+      if(days>=th.orange) return 'orange';
       return 'ok';
     });
 
@@ -1075,6 +1079,12 @@ function daysSinceIrrigation(fid, sid){
   var diffMs = nowMidnight - endMidnight;
   return Math.max(0, Math.floor(diffMs/86400000));
 }
+// Days-since-last-irrigation thresholds for the orange/red warning colors.
+// Chile is more water-sensitive, so it warns sooner than everything else.
+function irrigationThresholds(crop){
+  if(crop && /chile/i.test(crop)) return { orange:4, red:7 };
+  return { orange:7, red:10 };
+}
 function renderSections(){
   var f = curField;
   var el = document.getElementById('sections-list');
@@ -1090,13 +1100,14 @@ function renderSections(){
     var daysSince = active ? null : daysSinceIrrigation(f.id, s.id);
     var rowStyle = '';
     var statusBadge = '';
+    var th = irrigationThresholds(s.crop);
     if(active){
       rowStyle = ' style="background:var(--waterlight);border-color:var(--water);"';
       statusBadge = ' <span class="badge bb">💧 Irrigating Now</span>';
-    } else if(daysSince!==null && daysSince>=10){
+    } else if(daysSince!==null && daysSince>=th.red){
       rowStyle = ' style="background:#FBEAE8;border-color:var(--danger);"';
       statusBadge = ' <span class="badge" style="background:var(--danger);color:#fff;">🔴 '+daysSince+' days since water</span>';
-    } else if(daysSince!==null && daysSince>=7){
+    } else if(daysSince!==null && daysSince>=th.orange){
       rowStyle = ' style="background:var(--harvestlight);border-color:var(--harvest);"';
       statusBadge = ' <span class="badge" style="background:var(--harvest);color:#fff;">🟠 '+daysSince+' days since water</span>';
     } else if(daysSince!==null && daysSince>0){
@@ -3626,11 +3637,13 @@ function renderGlobal(id){
           // Sessions may have borrowed a different field's well, so check per-row rather than
           // assuming this field's own well was used.
           var costPerInch = '—';
+          var costPerHaInch = '—';
           var areaObj = fieldAreaObj(f.id);
           var fieldRows = DB.irrigation.filter(function(r){ return String(r.fid)===String(f.id); });
           var anyWellData = fieldRows.some(function(r){ return fieldWellGpm(r.wellFieldId||r.fid) > 0; });
           var totalGallons = anyWellData ? fieldRows.reduce(function(s,r){ return s+sessionGallons(r); },0) : 0;
           var totalInches = 0;
+          var totalHaInches = anyWellData ? haInchesFromGallons(totalGallons) : 0;
           if(anyWellData && areaObj && totalHrs>0){
             totalInches = irrInchesFromGallons(totalGallons, areaObj);
             if(totalInches>0){
@@ -3640,15 +3653,20 @@ function renderGlobal(id){
           } else if(!anyWellData){
             costPerInch = 'No well GPM set';
           }
+          if(anyWellData && totalHaInches>0){
+            if(billsMXN>0) costPerHaInch = fmtCur(billsMXN/totalHaInches,'MXN')+'/ha-in';
+            else if(billsUSD>0) costPerHaInch = fmtCur(billsUSD/totalHaInches,'USD')+'/ha-in';
+          }
           html += '<div style="'+(fi>0?'border-top:1px solid var(--border);padding-top:12px;margin-top:12px;':'')+'">';
           html += '<div style="font-weight:700;margin-bottom:8px;">'+f.name+' <span style="font-weight:400;color:var(--muted);font-size:12px;">('+billCount+' bill'+(billCount!==1?'s':'')+')</span></div>';
           html += '<div class="stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:0;">';
           html += '<div class="stat"><div class="stat-val" style="font-size:15px;">'+billsDisplay+'</div><div class="stat-lab">Total Bills</div></div>';
           html += '<div class="stat"><div class="stat-val bl" style="font-size:15px;">'+(totalHrs?totalHrs.toFixed(1)+' hrs':'—')+'</div><div class="stat-lab">Irr. Hours</div></div>';
           html += '<div class="stat"><div class="stat-val or" style="font-size:15px;">'+costPerHr+'</div><div class="stat-lab">Cost/Hour</div></div>';
-          html += '<div class="stat"><div class="stat-val or" style="font-size:15px;">'+costPerInch+'</div><div class="stat-lab">Cost/Inch</div></div>';
+          html += '<div class="stat"><div class="stat-val or" style="font-size:15px;">'+costPerHaInch+'</div><div class="stat-lab">Cost / Ha-Inch</div></div>';
           if(anyWellData){
             html += '<div class="stat"><div class="stat-val bl" style="font-size:15px;">'+Math.round(totalGallons).toLocaleString()+' gal</div><div class="stat-lab">Total Pumped</div></div>';
+            html += '<div class="stat"><div class="stat-val or" style="font-size:15px;">'+costPerInch+'</div><div class="stat-lab">Cost/Inch (whole field)</div></div>';
             html += '<div class="stat"><div class="stat-val bl" style="font-size:15px;">'+(totalInches?totalInches.toFixed(2)+'"':'—')+'</div><div class="stat-lab">Water Depth</div></div>';
           }
           html += '</div></div>';
