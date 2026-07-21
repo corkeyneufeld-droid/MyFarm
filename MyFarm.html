@@ -194,6 +194,20 @@ h3{font-size:13px;font-weight:600;color:var(--clay);}
     <button class="btn btn-green btn-sm" onclick="openSectionModal()">+ Add Section</button>
   </div>
   <div id="sections-list"></div>
+
+  <div class="card" style="margin-top:16px;">
+    <h2>🌧️ Log Rain</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">One rain entry covers the whole field. If it rained enough to match a section's typical irrigation depth, that section's watering countdown resets — rain well above that pushes it out even further.</p>
+    <input type="hidden" id="rain-edit-id"/>
+    <div class="form-row">
+      <div class="fg"><label>Date</label><input type="date" id="rain-date"/></div>
+      <div class="fg"><label>Amount (inches)</label><input type="number" step="0.01" min="0" id="rain-amount" placeholder="e.g. 0.75"/></div>
+    </div>
+    <div class="form-row"><div class="fg"><label>Notes</label><input type="text" id="rain-notes" placeholder="optional"/></div></div>
+    <button class="btn btn-blue" id="rain-btn" onclick="addRain()">🌧️ Log Rain</button>
+  </div>
+  <h2 style="margin-top:16px;">Rain History</h2>
+  <div id="rain-log"></div>
 </div>
 
 <div id="page-section-detail" class="page">
@@ -623,7 +637,7 @@ if (!DB) {
     DB = {};
   }
 }
-var keys = ['fields','irrigation','fertilizer','pesticide','spray','harvest','equipment','weather','reminders','rotation','photos','labour','electric','products','purchases'];
+var keys = ['fields','irrigation','fertilizer','pesticide','spray','harvest','equipment','weather','reminders','rotation','photos','labour','electric','products','purchases','rain'];
 keys.forEach(function(k){ if(!DB[k]) DB[k]=[]; });
 function save(){
   localStorage.setItem('myfarm3', JSON.stringify(DB));
@@ -715,6 +729,91 @@ function fieldAreaObj(fid){
   var num = parseFloat(parts[0]);
   if(!num) return null;
   return { num:num, unit:parts[1]||'ha' };
+}
+// ═══ RAIN ═══
+// A section's typical irrigation depth = average inches-per-session, based on its own
+// irrigation history. Rain gets compared against this to decide whether it counts as
+// "as good as a watering" for that specific section.
+function sectionTypicalDepth(fid,sid){
+  var rows = DB.irrigation.filter(function(r){ return String(r.fid)===String(fid)&&String(r.sid)===String(sid); });
+  if(!rows.length) return null;
+  var areaObj = getSectionAreaForIds(fid,sid);
+  if(!areaObj) return null;
+  var depths = rows.map(function(r){ return irrInchesFromGallons(sessionGallons(r), areaObj); }).filter(function(d){ return d>0; });
+  if(!depths.length) return null;
+  return depths.reduce(function(s,d){ return s+d; },0)/depths.length;
+}
+// If a rain event meets/exceeds a section's typical depth, it counts as a full watering —
+// the section's "last watered" anchor becomes the rain date. Rain well beyond typical depth
+// pushes that anchor further into the future (bonus days), so the section shows as still
+// "ahead" on water even past the rain date itself.
+function rainEffectiveAnchor(fid,sid){
+  var typical = sectionTypicalDepth(fid,sid);
+  if(!typical) return null;
+  var entries = (DB.rain||[]).filter(function(r){ return String(r.fid)===String(fid); });
+  var bestAnchor = null;
+  entries.forEach(function(r){
+    var amt = parseFloat(r.amount)||0;
+    if(amt<=0) return;
+    var ratio = amt/typical;
+    if(ratio<1) return; // not enough rain to count as a full irrigation for this section
+    var bonusDays = Math.floor(ratio-1);
+    var anchor = new Date(r.date+'T00:00:00');
+    anchor.setDate(anchor.getDate()+bonusDays);
+    if(!bestAnchor || anchor>bestAnchor) bestAnchor = anchor;
+  });
+  return bestAnchor;
+}
+function addRain(){
+  var fid = curField.id;
+  var date = g('rain-date');
+  var amount = parseFloat(g('rain-amount'))||0;
+  if(!date || amount<=0){ alert('Enter a date and rain amount.'); return; }
+  var editId = g('rain-edit-id');
+  if(editId){
+    var r = DB.rain.find(function(x){ return String(x.id)===String(editId); });
+    if(r){ r.date=date; r.amount=amount; r.notes=g('rain-notes'); }
+  } else {
+    DB.rain.push({ id:Date.now(), fid:fid, date:date, amount:amount, notes:g('rain-notes') });
+  }
+  save();
+  ['rain-date','rain-amount','rain-notes','rain-edit-id'].forEach(function(x){ var el=document.getElementById(x); if(el) el.value=''; });
+  var btn = document.getElementById('rain-btn');
+  if(btn) btn.textContent = '🌧️ Log Rain';
+  renderRainLog(fid);
+  renderSections();
+}
+function editRain(id){
+  var r = DB.rain.find(function(x){ return String(x.id)===String(id); });
+  if(!r) return;
+  document.getElementById('rain-edit-id').value = r.id;
+  document.getElementById('rain-date').value = r.date;
+  document.getElementById('rain-amount').value = r.amount;
+  document.getElementById('rain-notes').value = r.notes||'';
+  var btn = document.getElementById('rain-btn');
+  if(btn) btn.textContent = '💾 Update Rain Entry';
+  document.getElementById('rain-date').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function deleteRain(id){
+  if(!confirm('Delete this rain entry?')) return;
+  DB.rain = DB.rain.filter(function(x){ return String(x.id)!==String(id); });
+  save();
+  renderRainLog(curField.id);
+  renderSections();
+}
+function renderRainLog(fid){
+  var el = document.getElementById('rain-log');
+  if(!el) return;
+  var rows = DB.rain.filter(function(r){ return String(r.fid)===String(fid); }).sort(function(a,b){ return new Date(b.date)-new Date(a.date); });
+  if(!rows.length){ el.innerHTML = '<div class="empty"><div class="empty-icon">🌧️</div>No rain logged yet.</div>'; return; }
+  var html = '';
+  rows.forEach(function(r){
+    html += '<div class="log" style="border-color:var(--water);background:var(--waterlight);">';
+    html += '<div style="flex:1;"><strong>'+r.amount+'" rain</strong><div class="log-meta">📅 '+fmtD(r.date)+(r.notes?' · '+r.notes:'')+'</div></div>';
+    html += '<div style="display:flex;gap:6px;flex-shrink:0;"><button class="btn btn-edit btn-sm" onclick="editRain(\''+r.id+'\')">✏️</button><button class="log-del" onclick="deleteRain(\''+r.id+'\')">✕</button></div>';
+    html += '</div>';
+  });
+  el.innerHTML = html;
 }
 function migrateFertDosage(){
   var changed = false;
@@ -917,9 +1016,8 @@ function renderFields(){
       var rows = DB.irrigation.filter(function(r){ return String(r.fid)===String(f.id)&&String(r.sid)===String(s.id); });
       var active = rows.some(function(r){ return now>=parseLocalDate(r.start)&&now<=parseLocalDate(r.end); });
       if(active) return 'active';
-      if(!rows.length) return 'none';
-      var lastEnd = rows.reduce(function(l,r){ return (!l||new Date(r.end)>new Date(l))?r.end:l; }, null);
-      var days = Math.floor((now-new Date(lastEnd))/86400000);
+      var days = daysSinceIrrigation(f.id, s.id);
+      if(days===null) return 'none';
       var th = irrigationThresholds(s.crop);
       if(days>=th.red) return 'red';
       if(days>=th.orange) return 'orange';
@@ -1048,6 +1146,10 @@ function openField(id){
   document.getElementById('field-header').innerHTML =
     '<h1>'+f.name+'</h1>'+(f.area?'<div class="sub">Total: <strong>'+f.area+'</strong></div>':'')+(f.desc?'<div class="sub">'+f.desc+'</div>':'')+'<hr class="divider"/>';
   renderSections();
+  renderRainLog(f.id);
+  ['rain-edit-id','rain-date','rain-amount','rain-notes'].forEach(function(x){ var el=document.getElementById(x); if(el) el.value=''; });
+  var rainBtn = document.getElementById('rain-btn');
+  if(rainBtn) rainBtn.textContent = '🌧️ Log Rain';
   showPage('field-detail');
 }
 
@@ -1068,15 +1170,16 @@ function parseLocalDate(str){
 }
 function daysSinceIrrigation(fid, sid){
   var rows = DB.irrigation.filter(function(r){ return String(r.fid)===String(fid)&&String(r.sid)===String(sid); });
-  if(!rows.length) return null;
   var lastEnd = rows.reduce(function(latest,r){ return (!latest || parseLocalDate(r.end)>parseLocalDate(latest)) ? r.end : latest; }, null);
-  if(!lastEnd) return null;
+  var irrigationAnchor = lastEnd ? parseLocalDate(lastEnd) : null;
+  var rainAnchor = rainEffectiveAnchor(fid, sid);
+  var anchor = (irrigationAnchor && rainAnchor) ? (irrigationAnchor>rainAnchor?irrigationAnchor:rainAnchor) : (irrigationAnchor||rainAnchor);
+  if(!anchor) return null;
   // Compare calendar days, not raw ms, to avoid timezone issues
   var now = new Date();
-  var endDate = parseLocalDate(lastEnd);
   var nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  var endMidnight = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-  var diffMs = nowMidnight - endMidnight;
+  var anchorMidnight = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+  var diffMs = nowMidnight - anchorMidnight;
   return Math.max(0, Math.floor(diffMs/86400000));
 }
 // Days-since-last-irrigation thresholds for the orange/red warning colors.
